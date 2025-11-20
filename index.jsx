@@ -1,11 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body class="p-4 md:p-8 min-h-screen">
-<script type="text/javascript">
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Hexagon, Cpu, Shield, Database, Activity, Skull, X, Clock, Trophy
@@ -597,9 +589,6 @@ export default function GoofspielMobile() {
                 </button>
             </div>
         </div>
-    </script>
-  </body>
-</html>
       )}
     </div>
   );
