@@ -18,7 +18,7 @@ export const VerticalGraveyard = ({ usedCards, type }) => {
                             className={`
                                 flex items-center justify-center flex-1 w-full text-[10px] font-mono rounded-sm transition-all
                                 ${isUsed
-                                    ? 'bg-slate-800/50 text-slate-600 line-through decoration-slate-600'
+                                    ? 'bg-slate-800/50 text-slate-600 decoration-slate-600'
                                     : `${theme.bg} ${theme.color} border border-white/5 font-bold shadow-[0_0_5px_-2px_currentColor]`}
                             `}
                         >
@@ -47,7 +47,7 @@ export const HorizontalGraveyard = ({ usedCards, type }) => {
                             className={`
                                 flex items-center justify-center h-5 sm:h-6 flex-1 text-[8px] sm:text-[10px] font-mono rounded-sm transition-all
                                 ${isUsed
-                                    ? 'bg-slate-800/50 text-slate-600 line-through decoration-slate-600'
+                                    ? 'bg-slate-800/50 text-slate-600 decoration-slate-600'
                                     : `${theme.bg} ${theme.color} border border-white/5 font-bold shadow-[0_0_5px_-2px_currentColor]`}
                             `}
                         >
