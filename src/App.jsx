@@ -14,6 +14,7 @@ import { calculateNewRating } from './utils/glicko';
 import { auth } from './utils/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { findBestMatch, isHigherRated } from './utils/matchmaking';
+import { setupPresence, sendHeartbeat, cleanupPresence } from './utils/presence';
 
 function App() {
     // --- Firebase State ---
@@ -34,6 +35,8 @@ function App() {
     const [rematchStatus, setRematchStatus] = useState(null); // 'waiting', 'opponent-requested', 'declined', 'left'
     const [isSearching, setIsSearching] = useState(false);
     const [searchStartTime, setSearchStartTime] = useState(null);
+    const [oppDisconnectTime, setOppDisconnectTime] = useState(null);
+    const [showDisconnectWarning, setShowDisconnectWarning] = useState(false);
     const playerSlotRef = useRef(null);
 
     // --- Firebase Auth Logic ---
@@ -48,6 +51,42 @@ function App() {
         });
         return unsubscribe;
     }, []);
+
+    // Check for active game on load (reconnection)
+    useEffect(() => {
+        if (authLoading || !currentUser) return;
+
+        const activeGameData = localStorage.getItem('activeGame');
+        if (activeGameData) {
+            const { gameId: savedGameId, playerId: savedPlayerId, timestamp } = JSON.parse(activeGameData);
+
+            // Check if game is less than 1 hour old
+            if (Date.now() - timestamp < 3600000) {
+                console.log('[RECONNECT] Checking for active game...', savedGameId);
+
+                get(ref(db, `games/${savedGameId}`)).then(snapshot => {
+                    if (snapshot.exists()) {
+                        const gameData = snapshot.val();
+                        if (gameData.status === 'PLAYING' || gameData.status === 'WAITING') {
+                            console.log('[RECONNECT] Reconnecting to game...');
+                            setGameId(savedGameId);
+                            setPlayerId(savedPlayerId);
+                        } else {
+                            console.log('[RECONNECT] Game ended, clearing localStorage');
+                            localStorage.removeItem('activeGame');
+                            // Game ended, it will be cleaned up by the last player to leave
+                        }
+                    } else {
+                        console.log('[RECONNECT] Game not found, clearing localStorage');
+                        localStorage.removeItem('activeGame');
+                    }
+                });
+            } else {
+                console.log('[RECONNECT] Game too old, clearing localStorage');
+                localStorage.removeItem('activeGame');
+            }
+        }
+    }, [authLoading, currentUser]);
 
     // --- Firebase Logic ---
 
@@ -69,6 +108,10 @@ function App() {
                 hostRequest: false,
                 guestRequest: false,
                 accepted: false
+            },
+            presence: {
+                host: { online: true, lastSeen: serverTimestamp(), disconnectedAt: null },
+                guest: { online: false, lastSeen: null, disconnectedAt: null }
             }
         };
 
@@ -79,6 +122,14 @@ function App() {
         set(newGameRef, initialGameData);
         setGameId(newGameId);
         setPlayerId('host');
+
+        // Save to localStorage for reconnection
+        localStorage.setItem('activeGame', JSON.stringify({
+            gameId: newGameId,
+            playerId: 'host',
+            timestamp: Date.now()
+        }));
+        console.log('[RECONNECT] Saved game to localStorage');
     };
 
     const joinGame = (code) => {
@@ -89,6 +140,14 @@ function App() {
             if (snapshot.exists()) {
                 setGameId(code);
                 setPlayerId('guest');
+
+                // Save to localStorage for reconnection
+                localStorage.setItem('activeGame', JSON.stringify({
+                    gameId: code,
+                    playerId: 'guest',
+                    timestamp: Date.now()
+                }));
+                console.log('[RECONNECT] Saved game to localStorage');
                 update(gameRef, {
                     status: 'PLAYING',
                     'guest/id': getUserId(),
@@ -122,6 +181,24 @@ function App() {
 
         return () => unsubscribe();
     }, [gameId]);
+
+    // Setup presence tracking and heartbeat
+    useEffect(() => {
+        if (!gameId || !playerId) return;
+
+        // Setup presence on connect
+        setupPresence(gameId, playerId);
+
+        // Send heartbeat every 5 seconds
+        const heartbeatInterval = setInterval(() => {
+            sendHeartbeat(gameId, playerId);
+        }, 5000);
+
+        return () => {
+            clearInterval(heartbeatInterval);
+            cleanupPresence(gameId, playerId);
+        };
+    }, [gameId, playerId]);
 
     // Detect when matched into a game (for the waiting user)
     useEffect(() => {
@@ -196,6 +273,41 @@ function App() {
         }
         return () => clearInterval(interval);
     }, [gameData?.status, myData?.bid, localTime, oppLocalTime]);
+
+    // Monitor Opponent Disconnect
+    useEffect(() => {
+        if (!gameData || gameData.status !== 'PLAYING' || !gameData.presence) return;
+
+        const oppPresence = isHost ? gameData.presence.guest : gameData.presence.host;
+
+        if (!oppPresence?.online && oppPresence?.disconnectedAt) {
+            const disconnectTime = oppPresence.disconnectedAt;
+            setOppDisconnectTime(disconnectTime);
+            setShowDisconnectWarning(true);
+
+            console.log('[DISCONNECT] Opponent disconnected at:', disconnectTime);
+
+            // Check if 30 seconds have passed
+            const checkTimeout = setInterval(() => {
+                const elapsed = Date.now() - disconnectTime;
+
+                if (elapsed >= 30000) {
+                    console.log('[DISCONNECT] 30s timeout reached, ending game');
+                    clearInterval(checkTimeout);
+                    handleOpponentDisconnect();
+                }
+            }, 1000);
+
+            return () => clearInterval(checkTimeout);
+        } else {
+            // Opponent is online
+            if (showDisconnectWarning) {
+                console.log('[DISCONNECT] Opponent reconnected');
+                setShowDisconnectWarning(false);
+                setOppDisconnectTime(null);
+            }
+        }
+    }, [gameData?.presence, gameData?.status, isHost, showDisconnectWarning]);
 
     // Monitor Rematch State
     useEffect(() => {
@@ -379,13 +491,43 @@ function App() {
             } else {
                 nextUpdates[`games/${gameId}/status`] = 'END';
                 nextUpdates[`games/${gameId}/currentPrize`] = null;
-
                 // Handle Game End (Rating Updates) - Only Host runs this
                 handleGameEnd(hostScore, guestScore);
             }
 
             update(ref(db), nextUpdates);
         }, 3000); // 3 seconds to see result
+    };
+
+    const handleOpponentDisconnect = async () => {
+        if (playerId !== 'host') return; // Only host ends the game
+
+        console.log('[DISCONNECT] Ending game due to opponent disconnect');
+
+        const updates = {};
+        updates[`games/${gameId}/status`] = 'END';
+
+        // Award victory to connected player (me), loss to disconnected player
+        const myScore = 999;
+        const oppScore = 0;
+
+        if (isHost) {
+            updates[`games/${gameId}/host/score`] = myScore;
+            updates[`games/${gameId}/guest/score`] = oppScore;
+        } else {
+            updates[`games/${gameId}/guest/score`] = myScore;
+            updates[`games/${gameId}/host/score`] = oppScore;
+        }
+
+        await update(ref(db), updates);
+
+        // Update ratings (I win, opponent loses)
+        await handleGameEnd(isHost ? myScore : oppScore, isHost ? oppScore : myScore);
+
+        // Clear localStorage
+        localStorage.removeItem('activeGame');
+
+        setShowDisconnectWarning(false);
     };
 
     const handleGameEnd = async (hostScore, guestScore) => {
@@ -496,12 +638,16 @@ function App() {
         setSearchStartTime(Date.now());
 
         // Add to queue
-        await set(ref(db, `queue/${userId}`), {
+        const queueEntryRef = ref(db, `queue/${userId}`);
+        await set(queueEntryRef, {
             userId,
             rating: myProfile.rating || 1000,
             name: getUserName(),
             timestamp: serverTimestamp()
         });
+
+        // Set up onDisconnect to auto-remove
+        await onDisconnect(queueEntryRef).remove();
 
         console.log('[MATCHMAKING] Added to queue');
     };
@@ -580,6 +726,14 @@ function App() {
         setPlayerId(iAmHost ? 'host' : 'guest');
         setIsSearching(false);
         setSearchStartTime(null);
+
+        // Save to localStorage for reconnection
+        localStorage.setItem('activeGame', JSON.stringify({
+            gameId: newGameId,
+            playerId: iAmHost ? 'host' : 'guest',
+            timestamp: Date.now()
+        }));
+        console.log('[RECONNECT] Saved matched game to localStorage');
 
         console.log('[MATCHMAKING] Match complete!');
     };
@@ -878,6 +1032,18 @@ function App() {
                     </div>
                 </div>
             </div>
+
+            {/* Disconnect Warning Banner */}
+            {gameData.status === 'PLAYING' && showDisconnectWarning && oppDisconnectTime && (
+                <div className="absolute top-0 left-0 right-0 bg-red-900/95 border-b border-red-500 p-3 text-center z-50 animate-in slide-in-from-top">
+                    <div className="text-red-200 font-bold text-sm uppercase tracking-wide">
+                        ⚠️ OPPONENT DISCONNECTED
+                    </div>
+                    <div className="text-red-300 text-xs font-mono mt-1">
+                        Waiting for reconnection... {Math.max(0, 30 - Math.floor((Date.now() - oppDisconnectTime) / 1000))}s
+                    </div>
+                </div>
+            )}
 
             {/* End Screen */}
             {gameData.status === 'END' && (
