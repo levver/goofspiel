@@ -1,9 +1,8 @@
 import { Cpu, Hexagon, Database } from '../components/Icons';
 
 export const RANKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-
-export const RESOLVE_ROUND_TIMER = 300;
-
+export const RESOLVE_ROUND_TIMER = 300; // milliseconds
+export const INITIAL_TIME = 300; // seconds (5 minutes)
 export const THEME = {
     prize: {
         name: 'NET_CORE',

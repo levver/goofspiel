@@ -2,25 +2,58 @@ import React from 'react';
 import { Clock } from './Icons';
 import { formatTime } from '../utils/helpers';
 
-const StatBlock = ({ label, value, time, color, icon: Icon, align = 'left' }) => (
-    <div className={`flex flex-col ${align === 'right' ? 'items-end' : 'items-start'}`}>
-        <div className={`flex items-center gap-2 mb-1`}>
-            <div className={`flex items-center gap-1 text-[10px] font-mono tracking-widest text-slate-500`}>
-                {align === 'right' && label}
-                <Icon size={10} className={color} />
-                {align === 'left' && label}
+const StatBlock = ({ label, value, time, color, icon: Icon, align, profile, playerName }) => {
+    const isLeft = align === 'left';
+
+    const getWinRate = () => {
+        if (!profile || !profile.gamesPlayed) return '0%';
+        return Math.round((profile.gamesWon / profile.gamesPlayed) * 100) + '%';
+    };
+
+    return (
+        <div className={`flex flex-col ${isLeft ? 'items-start' : 'items-end'} group relative`}>
+            <div className="flex items-center gap-2 mb-1">
+                {!isLeft && <span className={`text-xs font-bold tracking-widest ${color}`}>{label}</span>}
+                <Icon className={`w-4 h-4 ${color}`} />
+                {isLeft && <span className={`text-xs font-bold tracking-widest ${color}`}>{label}</span>}
             </div>
 
-            {/* Timer Display */}
-            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700/50 text-[10px] font-mono ${time <= 30 ? 'text-red-500 animate-pulse' : 'text-slate-400'}`}>
-                <Clock size={8} />
-                <span>{formatTime(time)}</span>
+            {/* Profile Tooltip */}
+            {profile && (
+                <div className={`
+                    absolute top-full ${isLeft ? 'left-0' : 'right-0'} mt-2 w-48 
+                    bg-slate-900/95 border border-slate-700 rounded-lg p-3 shadow-xl z-50
+                    opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none
+                    text-xs font-mono
+                `}>
+                    {(playerName || profile?.name) && (
+                        <div className="text-white font-bold mb-2 border-b border-slate-700 pb-1">{playerName || profile?.name}</div>
+                    )}
+                    <div className="flex justify-between text-slate-400">
+                        <span>RATING:</span>
+                        <span className="text-white">{Math.round(profile.rating || 1000)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-400">
+                        <span>WIN RATE:</span>
+                        <span className="text-white">{getWinRate()}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-400">
+                        <span>GAMES:</span>
+                        <span className="text-white">{profile.gamesPlayed || 0}</span>
+                    </div>
+                </div>
+            )}
+
+            <div className="text-3xl font-black font-mono leading-none tracking-tighter text-white">
+                {value}
             </div>
+            {time !== undefined && (
+                <div className="text-[10px] font-mono text-slate-500 mt-1">
+                    TIME: <span className={time < 30 ? "text-red-500 animate-pulse" : "text-slate-400"}>{time}s</span>
+                </div>
+            )}
         </div>
-
-        {/* Score Display - Increased Size */}
-        <div className={`text-4xl sm:text-5xl font-black font-mono leading-none ${color} drop-shadow-2xl`}>{value}</div>
-    </div>
-);
+    );
+};
 
 export default StatBlock;

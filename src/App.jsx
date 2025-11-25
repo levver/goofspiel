@@ -4,24 +4,50 @@ import DataChip from './components/DataChip';
 import { VerticalGraveyard, HorizontalGraveyard } from './components/Graveyard';
 import StatBlock from './components/StatBlock';
 import Lobby from './components/Lobby';
-import { RANKS, RESOLVE_ROUND_TIMER } from './utils/constants';
+import LoginScreen from './components/LoginScreen';
+import { RANKS, RESOLVE_ROUND_TIMER, INITIAL_TIME } from './utils/constants';
 import { shuffle } from './utils/helpers';
 import { db } from './utils/firebaseConfig';
 import { ref, set, onValue, update, push, child, get, serverTimestamp } from "firebase/database";
+import { getUserId, getUserName, getUserProfile, updateUserProfile, migrateOldProfile } from './utils/userManager';
+import { calculateNewRating } from './utils/glicko';
+import { auth } from './utils/firebaseConfig';
+import { onAuthStateChanged } from 'firebase/auth';
+import { findBestMatch, isHigherRated } from './utils/matchmaking';
 
 function App() {
     // --- Firebase State ---
     const [gameId, setGameId] = useState(null);
     const [playerId, setPlayerId] = useState(null); // 'host' or 'guest'
     const [gameData, setGameData] = useState(null);
+    const [hostProfile, setHostProfile] = useState(null);
+    const [guestProfile, setGuestProfile] = useState(null);
+    const [currentUser, setCurrentUser] = useState(null);
+    const [authLoading, setAuthLoading] = useState(true);
 
     // --- Local UI State ---
     const [log, setLog] = useState({ msg: "SYSTEM READY", type: 'neutral' });
     const [animatingCard, setAnimatingCard] = useState(null);
     const [animationProps, setAnimationProps] = useState(null);
-    const [localTime, setLocalTime] = useState(600);
-    const [oppLocalTime, setOppLocalTime] = useState(600);
+    const [localTime, setLocalTime] = useState(INITIAL_TIME);
+    const [oppLocalTime, setOppLocalTime] = useState(INITIAL_TIME);
+    const [rematchStatus, setRematchStatus] = useState(null); // 'waiting', 'opponent-requested', 'declined', 'left'
+    const [isSearching, setIsSearching] = useState(false);
+    const [searchStartTime, setSearchStartTime] = useState(null);
     const playerSlotRef = useRef(null);
+
+    // --- Firebase Auth Logic ---
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            setCurrentUser(user);
+            setAuthLoading(false);
+            if (user) {
+                // Attempt migration on first sign-in
+                await migrateOldProfile();
+            }
+        });
+        return unsubscribe;
+    }, []);
 
     // --- Firebase Logic ---
 
@@ -34,11 +60,16 @@ function App() {
             round: 1,
             prizeDeck: shuffle([...RANKS]),
             currentPrize: null,
-            host: { score: 0, hand: [...RANKS], bid: null, graveyard: [], time: 600 },
-            guest: { score: 0, hand: [...RANKS], bid: null, graveyard: [], time: 600 },
+            host: { score: 0, hand: [...RANKS], bid: null, graveyard: [], time: INITIAL_TIME, id: getUserId(), name: getUserName() },
+            guest: { score: 0, hand: [...RANKS], bid: null, graveyard: [], time: INITIAL_TIME },
             prizeGraveyard: [],
             lastAction: Date.now(),
-            roundStart: serverTimestamp()
+            roundStart: serverTimestamp(),
+            rematch: {
+                hostRequest: false,
+                guestRequest: false,
+                accepted: false
+            }
         };
 
         // Set initial prize
@@ -58,7 +89,11 @@ function App() {
             if (snapshot.exists()) {
                 setGameId(code);
                 setPlayerId('guest');
-                update(gameRef, { status: 'PLAYING' });
+                update(gameRef, {
+                    status: 'PLAYING',
+                    'guest/id': getUserId(),
+                    'guest/name': getUserName()
+                });
             } else {
                 alert("Game not found! Check the code.");
             }
@@ -88,6 +123,51 @@ function App() {
         return () => unsubscribe();
     }, [gameId]);
 
+    // Detect when matched into a game (for the waiting user)
+    useEffect(() => {
+        if (!isSearching || gameId) return;
+
+        const userId = getUserId();
+        const gamesRef = ref(db, 'games');
+
+        console.log('[MATCHMAKING] Monitoring for game creation...');
+
+        const unsubscribe = onValue(gamesRef, (snapshot) => {
+            const allGames = snapshot.val();
+            if (!allGames) return;
+
+            // Find a game where I'm either host or guest
+            for (const [id, game] of Object.entries(allGames)) {
+                if (game.host?.id === userId || game.guest?.id === userId) {
+                    console.log('[MATCHMAKING] Found my game!', id);
+
+                    // Remove myself from queue
+                    set(ref(db, `queue/${userId}`), null);
+
+                    // Join the game
+                    setGameId(id);
+                    setPlayerId(game.host?.id === userId ? 'host' : 'guest');
+                    setIsSearching(false);
+                    setSearchStartTime(null);
+
+                    break;
+                }
+            }
+        });
+
+        return () => unsubscribe();
+    }, [isSearching, gameId]);
+
+    // Fetch Profiles (and refetch when game resets/rematch)
+    useEffect(() => {
+        if (gameData?.host?.id) {
+            getUserProfile(gameData.host.id).then(setHostProfile);
+        }
+        if (gameData?.guest?.id) {
+            getUserProfile(gameData.guest.id).then(setGuestProfile);
+        }
+    }, [gameData?.host?.id, gameData?.guest?.id, gameData?.round]);
+
     // Derived State for UI
     const isHost = playerId === 'host';
     const myData = (gameData && (isHost ? gameData.host : gameData.guest)) || {};
@@ -116,6 +196,112 @@ function App() {
         }
         return () => clearInterval(interval);
     }, [gameData?.status, myData?.bid, localTime, oppLocalTime]);
+
+    // Monitor Rematch State
+    useEffect(() => {
+        if (!gameData || gameData.status !== 'END') return;
+
+        const rematch = gameData.rematch;
+        if (!rematch) return;
+
+        // Check if opponent requested
+        const oppRequested = playerId === 'host' ? rematch.guestRequest : rematch.hostRequest;
+        const myRequest = playerId === 'host' ? rematch.hostRequest : rematch.guestRequest;
+
+        if (oppRequested && !myRequest && rematchStatus !== 'opponent-requested') {
+            setRematchStatus('opponent-requested');
+        }
+
+        // Check if both accepted
+        if (rematch.accepted && rematchStatus !== 'accepted') {
+            setRematchStatus('accepted');
+            handleRematchAccepted();
+        }
+
+        // Check if opponent left (their data becomes null or undefined)
+        if (!oppData || (!oppData.id && myRequest)) {
+            if (rematchStatus !== 'left') {
+                setRematchStatus('left');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            }
+        }
+    }, [gameData?.rematch, gameData?.status, oppData, playerId, rematchStatus]);
+
+    // Monitor Matchmaking Queue
+    useEffect(() => {
+        if (!isSearching) return;
+
+        const userId = getUserId();
+        const queueRef = ref(db, 'queue');
+
+        console.log('[MATCHMAKING] Starting queue monitor...', { userId });
+
+        const unsubscribe = onValue(queueRef, async (snapshot) => {
+            const queueData = snapshot.val();
+            console.log('[MATCHMAKING] Queue updated:', queueData);
+
+            if (!queueData) {
+                console.log('[MATCHMAKING] Queue is empty');
+                return;
+            }
+
+            // Convert to array and filter out self
+            const queueUsers = Object.values(queueData).filter(u => u.userId !== userId);
+            console.log('[MATCHMAKING] Other users in queue:', queueUsers);
+
+            if (queueUsers.length === 0) {
+                console.log('[MATCHMAKING] No other users, waiting...');
+                return; // No one else in queue
+            }
+
+            // Find best match
+            const myProfile = await getUserProfile(userId);
+            const myRating = myProfile.rating || 1000;
+            console.log('[MATCHMAKING] My rating:', myRating);
+
+            const bestMatch = findBestMatch(myRating, queueUsers);
+            console.log('[MATCHMAKING] Best match found:', bestMatch);
+
+            if (bestMatch) {
+                const ratingDiff = Math.abs(myRating - bestMatch.rating);
+                console.log('[MATCHMAKING] Rating difference:', ratingDiff);
+
+                // Deterministic game creation: only the user with the lexicographically smaller userId creates
+                // This prevents both users from trying to create a game simultaneously
+                const shouldCreateGame = userId < bestMatch.userId;
+                console.log('[MATCHMAKING] Should I create game?', shouldCreateGame, '(my userId:', userId, 'vs', bestMatch.userId, ')');
+
+                if (shouldCreateGame) {
+                    // Double-check both still in queue
+                    const oppStillInQueue = await get(ref(db, `queue/${bestMatch.userId}`));
+                    const iStillInQueue = await get(ref(db, `queue/${userId}`));
+
+                    console.log('[MATCHMAKING] Still in queue?', {
+                        me: iStillInQueue.exists(),
+                        opponent: oppStillInQueue.exists()
+                    });
+
+                    if (oppStillInQueue.exists() && iStillInQueue.exists()) {
+                        console.log('[MATCHMAKING] Creating game!');
+                        await createMatchedGame(bestMatch);
+                    } else {
+                        console.log('[MATCHMAKING] One or both users left queue, aborting');
+                    }
+                } else {
+                    console.log('[MATCHMAKING] Waiting for opponent to create game...');
+                }
+            } else {
+                console.log('[MATCHMAKING] No match found (should not happen)');
+            }
+        });
+
+        return () => {
+            console.log('[MATCHMAKING] Stopping queue monitor');
+            unsubscribe();
+        };
+    }, [isSearching]);
 
     // Host Logic for Resolution
     useEffect(() => {
@@ -193,10 +379,209 @@ function App() {
             } else {
                 nextUpdates[`games/${gameId}/status`] = 'END';
                 nextUpdates[`games/${gameId}/currentPrize`] = null;
+
+                // Handle Game End (Rating Updates) - Only Host runs this
+                handleGameEnd(hostScore, guestScore);
             }
 
             update(ref(db), nextUpdates);
         }, 3000); // 3 seconds to see result
+    };
+
+    const handleGameEnd = async (hostScore, guestScore) => {
+        if (playerId !== 'host') return;
+
+        const hostId = gameData.host.id;
+        const guestId = gameData.guest.id;
+
+        if (!hostId || !guestId) return;
+
+        const p1 = await getUserProfile(hostId);
+        const p2 = await getUserProfile(guestId);
+
+        let outcome = 0.5;
+        if (hostScore > guestScore) outcome = 1;
+        else if (guestScore > hostScore) outcome = 0;
+
+        const newP1 = calculateNewRating(p1, p2, outcome);
+        const newP2 = calculateNewRating(p2, p1, 1 - outcome);
+
+        // Update Host
+        updateUserProfile(hostId, {
+            gamesPlayed: (p1.gamesPlayed || 0) + 1,
+            gamesWon: (p1.gamesWon || 0) + (outcome === 1 ? 1 : 0),
+            rating: newP1.rating,
+            rd: newP1.rd,
+            vol: newP1.vol
+        });
+
+        // Update Guest
+        updateUserProfile(guestId, {
+            gamesPlayed: (p2.gamesPlayed || 0) + 1,
+            gamesWon: (p2.gamesWon || 0) + (outcome === 0 ? 1 : 0),
+            rating: newP2.rating,
+            rd: newP2.rd,
+            vol: newP2.vol
+        });
+    };
+
+    const handleRequestRematch = () => {
+        if (!gameId || !playerId) return;
+
+        setRematchStatus('waiting');
+        const updates = {};
+        updates[`games/${gameId}/rematch/${playerId}Request`] = true;
+
+        // Check if opponent already requested
+        const oppRequested = playerId === 'host' ? gameData.rematch?.guestRequest : gameData.rematch?.hostRequest;
+        if (oppRequested) {
+            updates[`games/${gameId}/rematch/accepted`] = true;
+        }
+
+        update(ref(db), updates);
+    };
+
+    const handleDeclineRematch = () => {
+        setRematchStatus('declined');
+        setTimeout(() => {
+            window.location.reload(); // Return to lobby
+        }, 2000);
+    };
+
+    const handleRematchAccepted = () => {
+        if (playerId !== 'host' || !gameData) return; // Only host resets the game
+
+        const resetUpdates = {};
+        const newPrizeDeck = shuffle([...RANKS]);
+
+        resetUpdates[`games/${gameId}/status`] = 'PLAYING';
+        resetUpdates[`games/${gameId}/round`] = 1;
+        resetUpdates[`games/${gameId}/prizeDeck`] = newPrizeDeck.slice(1);
+        resetUpdates[`games/${gameId}/currentPrize`] = newPrizeDeck[0];
+        resetUpdates[`games/${gameId}/prizeGraveyard`] = [];
+        resetUpdates[`games/${gameId}/roundStart`] = serverTimestamp();
+
+        // Reset host
+        resetUpdates[`games/${gameId}/host/score`] = 0;
+        resetUpdates[`games/${gameId}/host/hand`] = [...RANKS];
+        resetUpdates[`games/${gameId}/host/bid`] = null;
+        resetUpdates[`games/${gameId}/host/graveyard`] = [];
+        resetUpdates[`games/${gameId}/host/time`] = INITIAL_TIME;
+
+        // Reset guest
+        resetUpdates[`games/${gameId}/guest/score`] = 0;
+        resetUpdates[`games/${gameId}/guest/hand`] = [...RANKS];
+        resetUpdates[`games/${gameId}/guest/bid`] = null;
+        resetUpdates[`games/${gameId}/guest/graveyard`] = [];
+        resetUpdates[`games/${gameId}/guest/time`] = INITIAL_TIME;
+
+        // Reset rematch
+        resetUpdates[`games/${gameId}/rematch`] = {
+            hostRequest: false,
+            guestRequest: false,
+            accepted: false
+        };
+
+        update(ref(db), resetUpdates);
+        setRematchStatus(null);
+    };
+
+    const handleFindMatch = async () => {
+        const userId = getUserId();
+        const myProfile = await getUserProfile(userId);
+
+        console.log('[MATCHMAKING] Starting search...', { userId, rating: myProfile.rating || 1000, name: getUserName() });
+
+        setIsSearching(true);
+        setSearchStartTime(Date.now());
+
+        // Add to queue
+        await set(ref(db, `queue/${userId}`), {
+            userId,
+            rating: myProfile.rating || 1000,
+            name: getUserName(),
+            timestamp: serverTimestamp()
+        });
+
+        console.log('[MATCHMAKING] Added to queue');
+    };
+
+    const handleCancelSearch = async () => {
+        const userId = getUserId();
+        console.log('[MATCHMAKING] Cancelling search...', { userId });
+        await set(ref(db, `queue/${userId}`), null); // Remove from queue
+        setIsSearching(false);
+        setSearchStartTime(null);
+    };
+
+    const createMatchedGame = async (opponent) => {
+        const userId = getUserId();
+        const myProfile = await getUserProfile(userId);
+        const myRating = myProfile.rating || 1000;
+
+        console.log('[MATCHMAKING] Creating matched game...', {
+            me: { userId, rating: myRating },
+            opponent: { userId: opponent.userId, rating: opponent.rating }
+        });
+
+        // Determine who is host (higher rating)
+        const iAmHost = isHigherRated(myRating, opponent.rating);
+
+        console.log('[MATCHMAKING] Host assignment:', iAmHost ? 'I am host' : 'Opponent is host');
+
+        const newGameRef = push(child(ref(db), 'games'));
+        const newGameId = newGameRef.key;
+
+        const prizeDeck = shuffle([...RANKS]);
+        const initialGameData = {
+            status: 'PLAYING',
+            round: 1,
+            prizeDeck: prizeDeck.slice(1),
+            currentPrize: prizeDeck[0],
+            host: {
+                score: 0,
+                hand: [...RANKS],
+                bid: null,
+                graveyard: [],
+                time: INITIAL_TIME,
+                id: iAmHost ? userId : opponent.userId,
+                name: iAmHost ? getUserName() : opponent.name
+            },
+            guest: {
+                score: 0,
+                hand: [...RANKS],
+                bid: null,
+                graveyard: [],
+                time: INITIAL_TIME,
+                id: iAmHost ? opponent.userId : userId,
+                name: iAmHost ? opponent.name : getUserName()
+            },
+            prizeGraveyard: [],
+            lastAction: Date.now(),
+            roundStart: serverTimestamp(),
+            rematch: {
+                hostRequest: false,
+                guestRequest: false,
+                accepted: false
+            }
+        };
+
+        await set(newGameRef, initialGameData);
+
+        console.log('[MATCHMAKING] Game created:', newGameId);
+
+        // Clean up queue - only remove myself (opponent will detect game and remove themselves)
+        await set(ref(db, `queue/${userId}`), null);
+
+        console.log('[MATCHMAKING] Removed myself from queue');
+
+        // Set game state
+        setGameId(newGameId);
+        setPlayerId(iAmHost ? 'host' : 'guest');
+        setIsSearching(false);
+        setSearchStartTime(null);
+
+        console.log('[MATCHMAKING] Match complete!');
     };
 
     const handleCardClick = (rank, e) => {
@@ -261,8 +646,24 @@ function App() {
 
     // --- Render Helpers ---
 
+    if (authLoading) {
+        return <div className="fixed inset-0 bg-[#0a0e17] flex items-center justify-center text-cyan-500 font-mono animate-pulse">AUTHENTICATING...</div>;
+    }
+
+    if (!currentUser) {
+        return <LoginScreen />;
+    }
+
     if (!gameId) {
-        return <Lobby onCreateGame={createGame} onJoinGame={joinGame} />;
+        return <Lobby
+            onCreateGame={createGame}
+            onJoinGame={joinGame}
+            currentUser={currentUser}
+            isSearching={isSearching}
+            searchStartTime={searchStartTime}
+            onFindMatch={handleFindMatch}
+            onCancelSearch={handleCancelSearch}
+        />;
     }
 
     if (!gameData) {
@@ -341,7 +742,7 @@ function App() {
                 <div className="flex flex-col items-end">
                     <span className="text-[10px] text-slate-500 font-mono tracking-widest">POOL</span>
                     <span className="text-xl font-bold text-yellow-500 font-mono leading-none">
-                        {(gameData.prizeGraveyard ? gameData.prizeGraveyard.reduce((a, b) => a + b, 0) : 0) + (gameData.currentPrize || 0)}
+                        {91 - (gameData.prizeGraveyard ? gameData.prizeGraveyard.reduce((a, b) => a + b, 0) : 0) - (gameData.currentPrize || 0)}
                     </span>
                 </div>
             </div>
@@ -352,12 +753,14 @@ function App() {
                 {/* Opponent Bar */}
                 <div className="px-4 py-2 flex justify-end items-end border-b border-slate-800/30">
                     <StatBlock
-                        label="OPPONENT"
+                        label={oppData.name || 'OPPONENT'}
                         value={oppData.score}
                         time={oppLocalTime}
                         color="text-fuchsia-500"
                         icon={Hexagon}
                         align="right"
+                        profile={isHost ? guestProfile : hostProfile}
+                        playerName={oppData.name}
                     />
                 </div>
 
@@ -437,6 +840,8 @@ function App() {
                         color="text-cyan-400"
                         icon={Cpu}
                         align="left"
+                        profile={isHost ? hostProfile : guestProfile}
+                        playerName={myData.name}
                     />
                 </div>
 
@@ -494,12 +899,56 @@ function App() {
                                 <div className="text-3xl font-mono font-bold text-fuchsia-500">{oppData.score}</div>
                             </div>
                         </div>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="w-full bg-slate-100 text-slate-900 font-bold py-4 rounded-lg hover:bg-cyan-400 hover:scale-105 transition-all uppercase tracking-widest shadow-lg"
-                        >
-                            RETURN TO LOBBY
-                        </button>
+                        {rematchStatus === 'waiting' ? (
+                            <div className="w-full bg-slate-800/50 text-cyan-400 font-bold py-4 rounded-lg uppercase tracking-widest text-center animate-pulse">
+                                WAITING FOR OPPONENT...
+                            </div>
+                        ) : rematchStatus === 'opponent-requested' ? (
+                            <div className="space-y-3 w-full">
+                                <div className="text-center text-cyan-400 font-mono text-sm mb-2">
+                                    OPPONENT WANTS REMATCH
+                                </div>
+                                <button
+                                    onClick={handleRequestRematch}
+                                    className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-4 rounded-lg transition-all uppercase tracking-widest shadow-lg"
+                                >
+                                    ACCEPT
+                                </button>
+                                <button
+                                    onClick={handleDeclineRematch}
+                                    className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-lg transition-all uppercase tracking-widest"
+                                >
+                                    DECLINE
+                                </button>
+                            </div>
+                        ) : rematchStatus === 'accepted' ? (
+                            <div className="w-full bg-cyan-500/20 text-cyan-400 font-bold py-4 rounded-lg uppercase tracking-widest text-center border border-cyan-500/50">
+                                STARTING NEW GAME...
+                            </div>
+                        ) : rematchStatus === 'declined' ? (
+                            <div className="w-full bg-slate-800/50 text-slate-400 font-bold py-4 rounded-lg uppercase tracking-widest text-center">
+                                RETURNING TO LOBBY...
+                            </div>
+                        ) : rematchStatus === 'left' ? (
+                            <div className="w-full bg-red-900/50 text-red-400 font-bold py-4 rounded-lg uppercase tracking-widest text-center border border-red-500/50">
+                                OPPONENT LEFT
+                            </div>
+                        ) : (
+                            <div className="space-y-3 w-full">
+                                <button
+                                    onClick={handleRequestRematch}
+                                    className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-4 rounded-lg hover:scale-105 transition-all uppercase tracking-widest shadow-lg"
+                                >
+                                    PLAY AGAIN
+                                </button>
+                                <button
+                                    onClick={() => window.location.reload()}
+                                    className="w-full bg-slate-100 text-slate-900 font-bold py-4 rounded-lg hover:scale-105 transition-all uppercase tracking-widest shadow-lg"
+                                >
+                                    RETURN TO LOBBY
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

@@ -5,4 +5,18 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: '/goofspiel/',
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'firebase-core': ['firebase/app'],
+          'firebase-auth': ['firebase/auth'],
+          'firebase-database': ['firebase/database'],
+          'react-vendor': ['react', 'react-dom'],
+          'icons': ['lucide-react']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 600
+  }
 })
