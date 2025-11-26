@@ -13,9 +13,9 @@ const StatBlock = ({ label, value, time, color, icon: Icon, align, profile, play
     return (
         <div className={`flex flex-col ${isLeft ? 'items-start' : 'items-end'} group relative`}>
             <div className="flex items-center gap-2 mb-1">
-                {!isLeft && <span className={`text-xs font-bold tracking-widest ${color}`}>{label}</span>}
-                <Icon className={`w-4 h-4 ${color}`} />
-                {isLeft && <span className={`text-xs font-bold tracking-widest ${color}`}>{label}</span>}
+                {!isLeft && <span className={`text-xs font-bold tracking-widest ${color} drop-shadow-[0_0_6px_currentColor]`}>{label}</span>}
+                <Icon className={`w-4 h-4 ${color} drop-shadow-[0_0_8px_currentColor]`} />
+                {isLeft && <span className={`text-xs font-bold tracking-widest ${color} drop-shadow-[0_0_6px_currentColor]`}>{label}</span>}
             </div>
 
             {/* Profile Tooltip */}
@@ -44,12 +44,12 @@ const StatBlock = ({ label, value, time, color, icon: Icon, align, profile, play
                 </div>
             )}
 
-            <div className="text-3xl font-black font-mono leading-none tracking-tighter text-white">
+            <div className="text-3xl font-black font-mono leading-none tracking-tighter text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]">
                 {value}
             </div>
             {time !== undefined && (
                 <div className="text-[10px] font-mono text-slate-500 mt-1">
-                    TIME: <span className={time < 30 ? "text-red-500 animate-pulse" : "text-slate-400"}>{time}s</span>
+                    TIME: <span className={time < 30 ? "text-red-500 animate-pulse drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]" : "text-slate-400"}>{time}s</span>
                 </div>
             )}
         </div>

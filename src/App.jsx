@@ -2,7 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Cpu, Hexagon, Activity } from './components/Icons';
 import DataChip from './components/DataChip';
 import { VerticalGraveyard, HorizontalGraveyard } from './components/Graveyard';
+import ProgressBar from './components/ProgressBar';
 import StatBlock from './components/StatBlock';
+import EndScreen from './components/EndScreen';
+import HUD from './components/HUD';
+import WaitingScreen from './components/WaitingScreen';
+import DisconnectWarning from './components/DisconnectWarning';
 import Lobby from './components/Lobby';
 import LoginScreen from './components/LoginScreen';
 import { RANKS, RESOLVE_ROUND_TIMER, INITIAL_TIME } from './utils/constants';
@@ -199,21 +204,39 @@ function App() {
         // Check if game exists
         get(gameRef).then((snapshot) => {
             if (snapshot.exists()) {
+                const gameData = snapshot.val();
+                const myUserId = getUserId();
+
+                // Determine role based on ID in game data
+                // If ID matches host, I am host. If matches guest, I am guest.
+                // If neither (manual join), I am guest and I take the seat.
+                let role = 'guest';
+
+                if (gameData.host && gameData.host.id === myUserId) {
+                    role = 'host';
+                } else if (gameData.guest && gameData.guest.id === myUserId) {
+                    role = 'guest';
+                } else {
+                    // Manual join - take guest seat
+                    role = 'guest';
+                    // Only update DB if I'm taking the seat for the first time
+                    update(gameRef, {
+                        status: 'PLAYING',
+                        'guest/id': myUserId,
+                        'guest/name': getUserName()
+                    });
+                }
+
                 setGameId(code);
-                setPlayerId('guest');
+                setPlayerId(role);
 
                 // Save to localStorage for reconnection
                 localStorage.setItem('activeGame', JSON.stringify({
                     gameId: code,
-                    playerId: 'guest',
+                    playerId: role,
                     timestamp: Date.now()
                 }));
-                console.log('[RECONNECT] Saved game to localStorage');
-                update(gameRef, {
-                    status: 'PLAYING',
-                    'guest/id': getUserId(),
-                    'guest/name': getUserName()
-                });
+                console.log('[JOIN] Joined game as', role);
             } else {
                 alert("Game not found! Check the code.");
             }
@@ -309,6 +332,24 @@ function App() {
             getUserProfile(gameData.guest.id).then(setGuestProfile);
         }
     }, [gameData?.host?.id, gameData?.guest?.id, gameData?.round]);
+
+    // Apply rating updates when game ends
+    useEffect(() => {
+        if (!gameData || gameData.status !== 'END' || !gameData.ratingUpdates) return;
+
+        const myUserId = getUserId();
+        const amHost = playerId === 'host'; // Calculate locally to avoid initialization order issues
+        const myRatingUpdate = amHost ? gameData.ratingUpdates.host : gameData.ratingUpdates.guest;
+
+        if (myRatingUpdate && myUserId) {
+            // Each player updates their own profile
+            updateUserProfile(myUserId, myRatingUpdate).then(() => {
+                console.log('[RATING] Updated my profile with new rating');
+            }).catch(err => {
+                console.error('[RATING] Error updating profile:', err);
+            });
+        }
+    }, [gameData?.status, gameData?.ratingUpdates, playerId]);
 
     // Derived State for UI
     const isHost = playerId === 'host';
@@ -430,9 +471,14 @@ function App() {
         }
     }, [gameData?.rematch, gameData?.status, oppData, playerId, rematchStatus]);
 
+    const [isMatching, setIsMatching] = useState(false);
+
     // Monitor Matchmaking Queue
     useEffect(() => {
-        if (!isSearching) return;
+        if (!isSearching) {
+            setIsMatching(false);
+            return;
+        }
 
         const userId = getUserId();
         const queueRef = ref(db, 'queue');
@@ -447,6 +493,29 @@ function App() {
                 console.log('[MATCHMAKING] Queue is empty');
                 return;
             }
+
+            // Check if I have been assigned a game (by the opponent)
+            // Since we can't write to other users' queue entries, the creator writes to THEIR OWN entry
+            // and we look for it here.
+            const opponentWithGame = Object.values(queueData).find(u =>
+                u.userId !== userId &&
+                u.gameId &&
+                u.matchedWith === userId
+            );
+
+            if (opponentWithGame) {
+                console.log('[MATCHMAKING] Game assigned by opponent! Joining:', opponentWithGame.gameId);
+                setIsMatching(true); // Lock
+
+                // Join the game
+                joinGame(opponentWithGame.gameId);
+
+                // Remove self from queue
+                remove(ref(db, `queue/${userId}`));
+                return;
+            }
+
+            if (isMatching) return; // Stop if already matching/locked
 
             // Convert to array and filter out self
             const queueUsers = Object.values(queueData).filter(u => u.userId !== userId);
@@ -486,12 +555,14 @@ function App() {
 
                     if (oppStillInQueue.exists() && iStillInQueue.exists()) {
                         console.log('[MATCHMAKING] Creating game!');
+                        setIsMatching(true); // Lock
                         await createMatchedGame(bestMatch);
                     } else {
                         console.log('[MATCHMAKING] One or both users left queue, aborting');
                     }
                 } else {
                     console.log('[MATCHMAKING] Waiting for opponent to create game...');
+                    // Do NOT lock here, keep listening for the gameId assignment
                 }
             } else {
                 console.log('[MATCHMAKING] No match found (should not happen)');
@@ -502,7 +573,7 @@ function App() {
             console.log('[MATCHMAKING] Stopping queue monitor');
             unsubscribe();
         };
-    }, [isSearching]);
+    }, [isSearching, isMatching]);
 
     // Host Logic for Resolution
     useEffect(() => {
@@ -511,6 +582,13 @@ function App() {
         if (gameData.status === 'PLAYING' && gameData.host.bid && gameData.guest.bid) {
             // Both players have bid, trigger resolution
             resolveRound();
+        }
+
+        // Check for game end (e.g. forfeit) to trigger rating updates
+        // If status is END but no ratingUpdates exist yet, calculate them
+        if (gameData.status === 'END' && !gameData.ratingUpdates) {
+            console.log('[HOST] Game ended, calculating ratings...');
+            handleGameEnd(gameData.host.score, gameData.guest.score);
         }
     }, [gameData, playerId]);
 
@@ -637,22 +715,23 @@ function App() {
         const newP1 = calculateNewRating(p1, p2, outcome);
         const newP2 = calculateNewRating(p2, p1, 1 - outcome);
 
-        // Update Host
-        updateUserProfile(hostId, {
-            gamesPlayed: (p1.gamesPlayed || 0) + 1,
-            gamesWon: (p1.gamesWon || 0) + (outcome === 1 ? 1 : 0),
-            rating: newP1.rating,
-            rd: newP1.rd,
-            vol: newP1.vol
-        });
-
-        // Update Guest
-        updateUserProfile(guestId, {
-            gamesPlayed: (p2.gamesPlayed || 0) + 1,
-            gamesWon: (p2.gamesWon || 0) + (outcome === 0 ? 1 : 0),
-            rating: newP2.rating,
-            rd: newP2.rd,
-            vol: newP2.vol
+        // Store rating updates in the game object
+        // Each player will read their own stats and update their profile
+        await update(ref(db, `games/${gameId}/ratingUpdates`), {
+            host: {
+                gamesPlayed: (p1.gamesPlayed || 0) + 1,
+                gamesWon: (p1.gamesWon || 0) + (outcome === 1 ? 1 : 0),
+                rating: newP1.rating,
+                rd: newP1.rd,
+                vol: newP1.vol
+            },
+            guest: {
+                gamesPlayed: (p2.gamesPlayed || 0) + 1,
+                gamesWon: (p2.gamesWon || 0) + (outcome === 0 ? 1 : 0),
+                rating: newP2.rating,
+                rd: newP2.rd,
+                vol: newP2.vol
+            }
         });
     };
 
@@ -745,6 +824,47 @@ function App() {
         console.log('[REMATCH] Transitioning to new game...');
     };
 
+    const handleForfeit = async () => {
+        if (!gameId || !playerId || !gameData) return;
+
+        // Only allow forfeit during active gameplay
+        if (gameData.status !== 'PLAYING' && gameData.status !== 'RESOLVING') return;
+
+        // Confirm forfeit
+        const confirmed = window.confirm('Are you sure you want to forfeit? This will end the game and you will lose.');
+        if (!confirmed) return;
+
+        console.log('[FORFEIT] Player forfeiting:', playerId);
+
+        // Determine scores (forfeiter loses, opponent wins)
+        const myScore = 0;
+        const oppScore = 999;
+
+        const updates = {};
+        updates[`games/${gameId}/status`] = 'END';
+
+        if (isHost) {
+            updates[`games/${gameId}/host/score`] = myScore;
+            updates[`games/${gameId}/guest/score`] = oppScore;
+        } else {
+            updates[`games/${gameId}/guest/score`] = myScore;
+            updates[`games/${gameId}/host/score`] = oppScore;
+        }
+
+        await update(ref(db), updates);
+
+        // Update ratings (only host does this)
+        if (isHost) {
+            await handleGameEnd(isHost ? myScore : oppScore, isHost ? oppScore : myScore);
+        }
+
+        // Clear localStorage
+        localStorage.removeItem('activeGame');
+
+        console.log('[FORFEIT] Game ended');
+    };
+
+
     const handleFindMatch = async () => {
         const userId = getUserId();
         const myProfile = await getUserProfile(userId);
@@ -774,6 +894,7 @@ function App() {
         console.log('[MATCHMAKING] Cancelling search...', { userId });
         await set(ref(db, `queue/${userId}`), null); // Remove from queue
         setIsSearching(false);
+        setIsMatching(false); // Reset matching state
         setSearchStartTime(null);
     };
 
@@ -826,22 +947,36 @@ function App() {
                 hostRequest: false,
                 guestRequest: false,
                 accepted: false
+            },
+            presence: {
+                host: { online: true, lastSeen: serverTimestamp(), disconnectedAt: null },
+                guest: { online: true, lastSeen: serverTimestamp(), disconnectedAt: null }
             }
         };
 
+        // Create the game
         await set(newGameRef, initialGameData);
-
         console.log('[MATCHMAKING] Game created:', newGameId);
 
-        // Clean up queue - only remove myself (opponent will detect game and remove themselves)
-        await set(ref(db, `queue/${userId}`), null);
+        // Update MY queue entry with the gameId
+        // The opponent is watching the queue and will see that I have created a game
+        // and that they are matched with me
+        await update(ref(db, `queue/${userId}`), {
+            gameId: newGameId,
+            matchedWith: opponent.userId
+        });
 
-        console.log('[MATCHMAKING] Removed myself from queue');
+        console.log('[MATCHMAKING] Updated my queue entry with game info');
 
-        // Set game state
+        // Wait a moment for opponent to see it before removing myself
+        // Ideally we would wait for them to join, but for now a small delay + local join is fine
+        // The opponent will see the gameId in my entry and join
+
+        // Join the game locally
         setGameId(newGameId);
         setPlayerId(iAmHost ? 'host' : 'guest');
         setIsSearching(false);
+        setIsMatching(false); // Reset matching state
         setSearchStartTime(null);
 
         // Save to localStorage for reconnection
@@ -851,6 +986,12 @@ function App() {
             timestamp: Date.now()
         }));
         console.log('[RECONNECT] Saved matched game to localStorage');
+
+        // Remove myself from queue after a delay to ensure opponent sees it
+        setTimeout(() => {
+            remove(ref(db, `queue/${userId}`));
+            console.log('[MATCHMAKING] Removed myself from queue');
+        }, 5000);
 
         console.log('[MATCHMAKING] Match complete!');
     };
@@ -942,15 +1083,7 @@ function App() {
     }
 
     if (gameData.status === 'WAITING') {
-        return (
-            <div className="fixed inset-0 bg-[#0a0e17] flex flex-col items-center justify-center text-white font-mono gap-4">
-                <div className="text-2xl">WAITING FOR OPPONENT</div>
-                <div className="text-4xl font-bold text-cyan-400 tracking-widest border-2 border-dashed border-cyan-500/50 p-4 rounded-xl">
-                    {gameId}
-                </div>
-                <div className="text-sm text-slate-500">SHARE THIS CODE</div>
-            </div>
-        );
+        return <WaitingScreen gameId={gameId} />;
     }
 
 
@@ -996,27 +1129,11 @@ function App() {
             }}></div>
 
             {/* HUD */}
-            <div className="relative z-20 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 p-3 flex justify-between items-center shadow-xl">
-                <div className="flex flex-col">
-                    <span className="text-[10px] text-slate-500 font-mono tracking-widest">ROUND</span>
-                    <span className="text-xl font-bold text-white font-mono leading-none">{gameData.round}<span className="text-slate-600 text-sm">/13</span></span>
-                </div>
-
-                <div className={`px-3 py-1 rounded text-xs font-mono font-bold tracking-wider transition-colors duration-300
-                    ${currentLog.type === 'success' ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/30' :
-                        currentLog.type === 'danger' ? 'bg-fuchsia-900/50 text-fuchsia-400 border border-fuchsia-500/30' :
-                            'bg-slate-800 text-slate-300 border border-slate-700'}
-                `}>
-                    {currentLog.msg}
-                </div>
-
-                <div className="flex flex-col items-end">
-                    <span className="text-[10px] text-slate-500 font-mono tracking-widest">POOL</span>
-                    <span className="text-xl font-bold text-yellow-500 font-mono leading-none">
-                        {91 - (gameData.prizeGraveyard ? gameData.prizeGraveyard.reduce((a, b) => a + b, 0) : 0) - (gameData.currentPrize || 0)}
-                    </span>
-                </div>
-            </div>
+            <HUD
+                gameData={gameData}
+                currentLog={currentLog}
+                onForfeit={handleForfeit}
+            />
 
             {/* Main Arena */}
             <div className="flex-1 relative flex flex-col w-full max-w-md mx-auto">
@@ -1043,6 +1160,14 @@ function App() {
 
                     {/* Center Card Area */}
                     <div className="flex-1 flex flex-col items-center justify-center relative">
+
+                        {/* Progress Bar */}
+                        <ProgressBar
+                            myScore={myData.score}
+                            oppScore={oppData.score}
+                            prizeGraveyard={gameData.prizeGraveyard}
+                            status={gameData.status}
+                        />
 
                         <HorizontalGraveyard usedCards={gameData.prizeGraveyard || []} type="prize" />
 
@@ -1152,88 +1277,18 @@ function App() {
 
             {/* Disconnect Warning Banner */}
             {gameData.status === 'PLAYING' && showDisconnectWarning && oppDisconnectTime && (
-                <div className="absolute top-0 left-0 right-0 bg-red-900/95 border-b border-red-500 p-3 text-center z-50 animate-in slide-in-from-top">
-                    <div className="text-red-200 font-bold text-sm uppercase tracking-wide">
-                        ⚠️ OPPONENT DISCONNECTED
-                    </div>
-                    <div className="text-red-300 text-xs font-mono mt-1">
-                        Waiting for reconnection... {Math.max(0, 30 - Math.floor((Date.now() - oppDisconnectTime) / 1000))}s
-                    </div>
-                </div>
+                <DisconnectWarning oppDisconnectTime={oppDisconnectTime} />
             )}
 
             {/* End Screen */}
             {gameData.status === 'END' && (
-                <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md animate-in fade-in p-8">
-                    <div className="flex flex-col items-center w-full max-w-sm border border-slate-700 rounded-2xl p-8 bg-black/50 shadow-2xl">
-                        <h1 className="text-5xl font-black text-white mb-2 tracking-tighter">
-                            {myData.score > oppData.score ? <span className="text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]">VICTORY</span> :
-                                myData.score < oppData.score ? <span className="text-fuchsia-500 drop-shadow-[0_0_10px_rgba(217,70,239,0.5)]">DEFEAT</span> :
-                                    "DRAW"}
-                        </h1>
-                        <div className="w-full h-px bg-gradient-to-r from-transparent via-slate-500 to-transparent my-6"></div>
-                        <div className="flex justify-between w-full px-4 mb-8">
-                            <div className="text-center">
-                                <div className="text-xs text-slate-500 mb-1">YOUR SCORE</div>
-                                <div className="text-3xl font-mono font-bold text-cyan-400">{myData.score}</div>
-                            </div>
-                            <div className="text-center">
-                                <div className="text-xs text-slate-500 mb-1">OPPONENT</div>
-                                <div className="text-3xl font-mono font-bold text-fuchsia-500">{oppData.score}</div>
-                            </div>
-                        </div>
-                        {rematchStatus === 'waiting' ? (
-                            <div className="w-full bg-slate-800/50 text-cyan-400 font-bold py-4 rounded-lg uppercase tracking-widest text-center animate-pulse">
-                                WAITING FOR OPPONENT...
-                            </div>
-                        ) : rematchStatus === 'opponent-requested' ? (
-                            <div className="space-y-3 w-full">
-                                <div className="text-center text-cyan-400 font-mono text-sm mb-2">
-                                    OPPONENT WANTS REMATCH
-                                </div>
-                                <button
-                                    onClick={handleRequestRematch}
-                                    className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-4 rounded-lg transition-all uppercase tracking-widest shadow-lg"
-                                >
-                                    ACCEPT
-                                </button>
-                                <button
-                                    onClick={handleDeclineRematch}
-                                    className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-lg transition-all uppercase tracking-widest"
-                                >
-                                    DECLINE
-                                </button>
-                            </div>
-                        ) : rematchStatus === 'accepted' ? (
-                            <div className="w-full bg-cyan-500/20 text-cyan-400 font-bold py-4 rounded-lg uppercase tracking-widest text-center border border-cyan-500/50">
-                                STARTING NEW GAME...
-                            </div>
-                        ) : rematchStatus === 'declined' ? (
-                            <div className="w-full bg-slate-800/50 text-slate-400 font-bold py-4 rounded-lg uppercase tracking-widest text-center">
-                                RETURNING TO LOBBY...
-                            </div>
-                        ) : rematchStatus === 'left' ? (
-                            <div className="w-full bg-red-900/50 text-red-400 font-bold py-4 rounded-lg uppercase tracking-widest text-center border border-red-500/50">
-                                OPPONENT LEFT
-                            </div>
-                        ) : (
-                            <div className="space-y-3 w-full">
-                                <button
-                                    onClick={handleRequestRematch}
-                                    className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-4 rounded-lg hover:scale-105 transition-all uppercase tracking-widest shadow-lg"
-                                >
-                                    PLAY AGAIN
-                                </button>
-                                <button
-                                    onClick={() => window.location.reload()}
-                                    className="w-full bg-slate-100 text-slate-900 font-bold py-4 rounded-lg hover:scale-105 transition-all uppercase tracking-widest shadow-lg"
-                                >
-                                    RETURN TO LOBBY
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <EndScreen
+                    myData={myData}
+                    oppData={oppData}
+                    rematchStatus={rematchStatus}
+                    onRequestRematch={handleRequestRematch}
+                    onDeclineRematch={handleDeclineRematch}
+                />
             )}
         </div>
     );

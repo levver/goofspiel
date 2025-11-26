@@ -43,15 +43,15 @@ const DataChip = ({
                 flex flex-col justify-between p-1.5 select-none overflow-hidden
                 ${theme.border}
                 ${disabled ? 'opacity-40 cursor-not-allowed grayscale' : 'cursor-pointer'}
-                ${highlight ? `ring-2 ring-offset-1 ring-offset-slate-900 ${theme.shadow} -translate-y-2` : ''}
+                ${highlight ? `ring-2 ring-offset-1 ring-offset-slate-900 ${theme.shadow} -translate-y-2 shadow-[0_0_25px_currentColor]` : ''}
                 ${className}
             `}
         >
             <div className={`absolute inset-0 bg-gradient-to-b from-transparent via-${theme.color.split('-')[1]}-500/10 to-transparent opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-500 translate-y-[-100%] group-hover:translate-y-[100%] h-[200%] w-full`} />
 
             <div className="flex justify-between items-start">
-                <span className={`font-mono font-bold ${textSize} ${theme.color}`}>{rank}</span>
-                {!compact && <Icon size={14} className={theme.color} />}
+                <span className={`font-mono font-bold ${textSize} ${theme.color} ${highlight ? 'drop-shadow-[0_0_8px_currentColor]' : ''}`}>{rank}</span>
+                {!compact && <Icon size={14} className={`${theme.color} ${highlight ? 'drop-shadow-[0_0_6px_currentColor]' : ''}`} />}
             </div>
 
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
