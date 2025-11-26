@@ -2,7 +2,7 @@ import { ref, get, update, child } from "firebase/database";
 import { db, auth } from "./firebaseConfig";
 
 const STORAGE_KEY_USER_NAME = 'goofspiel_user_name';
-const STORAGE_KEY_OLD_USER_ID = 'goofspiel_user_id'; // For migration
+
 
 export const getUserId = () => {
     return auth.currentUser?.uid || null;
@@ -47,35 +47,6 @@ export const updateUserProfile = async (userId, data) => {
         await update(ref(db, `users/${userId}`), data);
     } catch (error) {
         console.error("Error updating user profile:", error);
-    }
-};
-
-// Migration helper: check if old profile exists and migrate it
-export const migrateOldProfile = async () => {
-    const oldUserId = localStorage.getItem(STORAGE_KEY_OLD_USER_ID);
-    const newUserId = getUserId();
-
-    if (!oldUserId || !newUserId || oldUserId === newUserId) {
-        return;
-    }
-
-    try {
-        // Check if old profile exists
-        const oldProfileSnapshot = await get(child(ref(db), `users/${oldUserId}`));
-        if (oldProfileSnapshot.exists()) {
-            // Check if new profile already exists
-            const newProfileSnapshot = await get(child(ref(db), `users/${newUserId}`));
-            if (!newProfileSnapshot.exists()) {
-                // Migrate old profile to new UID
-                const oldProfile = oldProfileSnapshot.val();
-                await update(ref(db, `users/${newUserId}`), oldProfile);
-                console.log('Successfully migrated old profile to authenticated account');
-            }
-        }
-        // Clear old storage key
-        localStorage.removeItem(STORAGE_KEY_OLD_USER_ID);
-    } catch (error) {
-        console.error("Error migrating profile:", error);
     }
 };
 

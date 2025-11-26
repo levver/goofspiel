@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
 import { auth } from '../utils/firebaseConfig';
-import { Shield, Mail, Lock, Chrome } from './Icons';
+import { Shield, Mail, Lock } from './Icons';
 
 const LoginScreen = () => {
     const [isSignUp, setIsSignUp] = useState(false);
@@ -28,18 +28,7 @@ const LoginScreen = () => {
         }
     };
 
-    const handleGoogleSignIn = async () => {
-        setError('');
-        setLoading(true);
-        try {
-            const provider = new GoogleAuthProvider();
-            await signInWithPopup(auth, provider);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
+
 
     const handleAnonymousSignIn = async () => {
         setError('');
@@ -135,15 +124,7 @@ const LoginScreen = () => {
                         </div>
                     </div>
 
-                    {/* Google Sign In */}
-                    <button
-                        onClick={handleGoogleSignIn}
-                        disabled={loading}
-                        className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded transition-all border border-slate-700 flex items-center justify-center gap-2 mb-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <Chrome className="w-5 h-5" />
-                        SIGN IN WITH GOOGLE
-                    </button>
+
 
                     {/* Guest Sign In */}
                     <button

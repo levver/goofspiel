@@ -8,8 +8,8 @@ import LoginScreen from './components/LoginScreen';
 import { RANKS, RESOLVE_ROUND_TIMER, INITIAL_TIME } from './utils/constants';
 import { shuffle } from './utils/helpers';
 import { db } from './utils/firebaseConfig';
-import { ref, set, onValue, update, push, child, get, serverTimestamp } from "firebase/database";
-import { getUserId, getUserName, getUserProfile, updateUserProfile, migrateOldProfile } from './utils/userManager';
+import { ref, set, onValue, update, push, child, get, serverTimestamp, onDisconnect } from "firebase/database";
+import { getUserId, getUserName, getUserProfile, updateUserProfile } from './utils/userManager';
 import { calculateNewRating } from './utils/glicko';
 import { auth } from './utils/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -39,15 +39,67 @@ function App() {
     const [showDisconnectWarning, setShowDisconnectWarning] = useState(false);
     const playerSlotRef = useRef(null);
 
+    // --- Helper Logic ---
+    const checkAndCleanupGame = async (gameId, gameData) => {
+        if (!gameData) return false;
+
+        // If game is already ended or abandoned, it's not active
+        if (gameData.status === 'END' || gameData.status === 'ABANDONED') {
+            return false;
+        }
+
+        // Only check for abandonment in PLAYING games
+        // WAITING games haven't started yet, so one player being missing is expected
+        if (gameData.status !== 'PLAYING' && gameData.status !== 'RESOLVING') {
+            return true;
+        }
+
+        // Check for abandonment (both players offline for > 60s)
+        const hostPresence = gameData.presence?.host;
+        const guestPresence = gameData.presence?.guest;
+
+        // If presence data doesn't exist, game was just created, don't mark as abandoned
+        if (!hostPresence || !guestPresence) {
+            return true;
+        }
+
+        const isHostOffline = !hostPresence.online;
+        const isGuestOffline = !guestPresence.online;
+
+        if (isHostOffline && isGuestOffline) {
+            const now = Date.now();
+            const hostLastSeen = hostPresence.lastSeen || hostPresence.disconnectedAt || 0;
+            const guestLastSeen = guestPresence.lastSeen || guestPresence.disconnectedAt || 0;
+
+            // If timestamps are 0 or very small, presence isn't set up yet
+            if (hostLastSeen === 0 || guestLastSeen === 0) {
+                return true;
+            }
+
+            const hostTimeSince = now - hostLastSeen;
+            const guestTimeSince = now - guestLastSeen;
+
+            // If both offline for more than 60 seconds
+            if (hostTimeSince > 60000 && guestTimeSince > 60000) {
+                console.log('[CLEANUP] Game abandoned (both offline > 60s):', gameId);
+
+                // Mark as abandoned
+                await update(ref(db, `games/${gameId}`), {
+                    status: 'ABANDONED'
+                });
+
+                return false;
+            }
+        }
+
+        return true;
+    };
+
     // --- Firebase Auth Logic ---
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setCurrentUser(user);
             setAuthLoading(false);
-            if (user) {
-                // Attempt migration on first sign-in
-                await migrateOldProfile();
-            }
         });
         return unsubscribe;
     }, []);
@@ -67,19 +119,28 @@ function App() {
                 get(ref(db, `games/${savedGameId}`)).then(snapshot => {
                     if (snapshot.exists()) {
                         const gameData = snapshot.val();
-                        if (gameData.status === 'PLAYING' || gameData.status === 'WAITING') {
-                            console.log('[RECONNECT] Reconnecting to game...');
-                            setGameId(savedGameId);
-                            setPlayerId(savedPlayerId);
+                        if (gameData.status === 'PLAYING' || gameData.status === 'WAITING' || gameData.status === 'RESOLVING') {
+                            // Check for abandonment before reconnecting
+                            checkAndCleanupGame(savedGameId, gameData).then(isValid => {
+                                if (isValid) {
+                                    console.log('[RECONNECT] Reconnecting to game...', gameData.status);
+                                    setGameId(savedGameId);
+                                    setPlayerId(savedPlayerId);
+                                } else {
+                                    console.log('[RECONNECT] Game abandoned or invalid, clearing localStorage');
+                                    localStorage.removeItem('activeGame');
+                                }
+                            });
                         } else {
-                            console.log('[RECONNECT] Game ended, clearing localStorage');
+                            console.log('[RECONNECT] Game ended or invalid status:', gameData.status);
                             localStorage.removeItem('activeGame');
-                            // Game ended, it will be cleaned up by the last player to leave
                         }
                     } else {
                         console.log('[RECONNECT] Game not found, clearing localStorage');
                         localStorage.removeItem('activeGame');
                     }
+                }).catch(err => {
+                    console.error('[RECONNECT] Error checking game:', err);
                 });
             } else {
                 console.log('[RECONNECT] Game too old, clearing localStorage');
@@ -216,17 +277,21 @@ function App() {
             // Find a game where I'm either host or guest
             for (const [id, game] of Object.entries(allGames)) {
                 if (game.host?.id === userId || game.guest?.id === userId) {
-                    console.log('[MATCHMAKING] Found my game!', id);
+                    // Check validity first
+                    checkAndCleanupGame(id, game).then(isValid => {
+                        if (isValid) {
+                            console.log('[MATCHMAKING] Found my game!', id);
 
-                    // Remove myself from queue
-                    set(ref(db, `queue/${userId}`), null);
+                            // Remove myself from queue
+                            set(ref(db, `queue/${userId}`), null);
 
-                    // Join the game
-                    setGameId(id);
-                    setPlayerId(game.host?.id === userId ? 'host' : 'guest');
-                    setIsSearching(false);
-                    setSearchStartTime(null);
-
+                            // Join the game
+                            setGameId(id);
+                            setPlayerId(game.host?.id === userId ? 'host' : 'guest');
+                            setIsSearching(false);
+                            setSearchStartTime(null);
+                        }
+                    });
                     break;
                 }
             }
@@ -324,10 +389,34 @@ function App() {
             setRematchStatus('opponent-requested');
         }
 
-        // Check if both accepted
-        if (rematch.accepted && rematchStatus !== 'accepted') {
+        // Check if both accepted AND newGameId doesn't exist yet (prevent duplicate creation)
+        if (rematch.accepted && rematchStatus !== 'accepted' && !rematch.newGameId) {
             setRematchStatus('accepted');
-            handleRematchAccepted();
+            // Only host creates the game
+            if (playerId === 'host') {
+                handleRematchAccepted();
+            }
+        }
+
+        // Check if new game has been created (both players detect it)
+        if (rematch.newGameId && rematchStatus === 'accepted') {
+            console.log('[REMATCH] Detected new game, transitioning...', rematch.newGameId);
+
+            // Clean up presence for old game
+            cleanupPresence(gameId, playerId);
+
+            // Transition to new game
+            setGameId(rematch.newGameId);
+            setRematchStatus(null);
+
+            // Update localStorage
+            localStorage.setItem('activeGame', JSON.stringify({
+                gameId: rematch.newGameId,
+                playerId: playerId,
+                timestamp: Date.now()
+            }));
+
+            console.log('[REMATCH] Transitioned to new game:', rematch.newGameId);
         }
 
         // Check if opponent left (their data becomes null or undefined)
@@ -590,42 +679,70 @@ function App() {
         }, 2000);
     };
 
-    const handleRematchAccepted = () => {
-        if (playerId !== 'host' || !gameData) return; // Only host resets the game
+    const handleRematchAccepted = async () => {
+        if (playerId !== 'host' || !gameData) return; // Only host creates the new game
 
-        const resetUpdates = {};
-        const newPrizeDeck = shuffle([...RANKS]);
+        console.log('[REMATCH] Creating new game for rematch...');
 
-        resetUpdates[`games/${gameId}/status`] = 'PLAYING';
-        resetUpdates[`games/${gameId}/round`] = 1;
-        resetUpdates[`games/${gameId}/prizeDeck`] = newPrizeDeck.slice(1);
-        resetUpdates[`games/${gameId}/currentPrize`] = newPrizeDeck[0];
-        resetUpdates[`games/${gameId}/prizeGraveyard`] = [];
-        resetUpdates[`games/${gameId}/roundStart`] = serverTimestamp();
+        // Create a new game (instead of resetting the old one)
+        const newGameRef = push(child(ref(db), 'games'));
+        const newGameId = newGameRef.key;
 
-        // Reset host
-        resetUpdates[`games/${gameId}/host/score`] = 0;
-        resetUpdates[`games/${gameId}/host/hand`] = [...RANKS];
-        resetUpdates[`games/${gameId}/host/bid`] = null;
-        resetUpdates[`games/${gameId}/host/graveyard`] = [];
-        resetUpdates[`games/${gameId}/host/time`] = INITIAL_TIME;
-
-        // Reset guest
-        resetUpdates[`games/${gameId}/guest/score`] = 0;
-        resetUpdates[`games/${gameId}/guest/hand`] = [...RANKS];
-        resetUpdates[`games/${gameId}/guest/bid`] = null;
-        resetUpdates[`games/${gameId}/guest/graveyard`] = [];
-        resetUpdates[`games/${gameId}/guest/time`] = INITIAL_TIME;
-
-        // Reset rematch
-        resetUpdates[`games/${gameId}/rematch`] = {
-            hostRequest: false,
-            guestRequest: false,
-            accepted: false
+        const prizeDeck = shuffle([...RANKS]);
+        const newGameData = {
+            status: 'PLAYING',
+            round: 1,
+            prizeDeck: prizeDeck.slice(1),
+            currentPrize: prizeDeck[0],
+            host: {
+                score: 0,
+                hand: [...RANKS],
+                bid: null,
+                graveyard: [],
+                time: INITIAL_TIME,
+                id: gameData.host.id,
+                name: gameData.host.name
+            },
+            guest: {
+                score: 0,
+                hand: [...RANKS],
+                bid: null,
+                graveyard: [],
+                time: INITIAL_TIME,
+                id: gameData.guest.id,
+                name: gameData.guest.name
+            },
+            prizeGraveyard: [],
+            lastAction: Date.now(),
+            roundStart: serverTimestamp(),
+            rematch: {
+                hostRequest: false,
+                guestRequest: false,
+                accepted: false
+            },
+            presence: {
+                host: { online: true, lastSeen: serverTimestamp(), disconnectedAt: null },
+                guest: { online: true, lastSeen: serverTimestamp(), disconnectedAt: null }
+            },
+            previousGameId: gameId // Track the previous game for history
         };
 
-        update(ref(db), resetUpdates);
-        setRematchStatus(null);
+        // Create the new game
+        await set(newGameRef, newGameData);
+
+        console.log('[REMATCH] New game created:', newGameId);
+
+        // Update the old game to mark it as rematched
+        await update(ref(db, `games/${gameId}`), {
+            rematchedTo: newGameId
+        });
+
+        // Store reference to new game in state variable so both players can transition
+        await update(ref(db, `games/${gameId}/rematch`), {
+            newGameId: newGameId
+        });
+
+        console.log('[REMATCH] Transitioning to new game...');
     };
 
     const handleFindMatch = async () => {

@@ -32,9 +32,19 @@ export const sendHeartbeat = async (gameId, playerId) => {
 
 // Clean up presence on leaving
 export const cleanupPresence = async (gameId, playerId) => {
-    // Cancel onDisconnect
+    // Explicitly mark as offline immediately
     const presenceRef = ref(db, `games/${gameId}/presence/${playerId}`);
-    await fbOnDisconnect(presenceRef).cancel();
+    await update(presenceRef, {
+        online: false,
+        lastSeen: serverTimestamp()
+    });
+
+    // NOTE: We do NOT cancel the onDisconnect handler here.
+    // If we cancel it, and the user closes the tab immediately after this function runs
+    // (or if this function runs AS the tab is closing), the onDisconnect might be cancelled
+    // before the socket actually disconnects, leaving the user "online" forever.
+    // By leaving it active, we ensure that if the connection drops, the server will
+    // enforce the offline state.
 
     console.log('[PRESENCE] Cleaned up for', playerId);
 };
