@@ -284,14 +284,14 @@ function App() {
 
         // Send heartbeat every 5 seconds
         const heartbeatInterval = setInterval(() => {
-            sendHeartbeat(gameId, playerId);
+            sendHeartbeat(gameId, playerId, localTime);
         }, 5000);
 
         return () => {
             clearInterval(heartbeatInterval);
             cleanupPresence(gameId, playerId);
         };
-    }, [gameId, playerId]);
+    }, [gameId, playerId, localTime]);
 
     // Detect when matched into a game (for the waiting user)
     useEffect(() => {
@@ -673,13 +673,22 @@ function App() {
 
         if (hostBid > guestBid) {
             hostScore += prize;
-            msg = `HOST WON (+${prize})`;
-            type = "success";
+            msg = `WON ${prize}`;
+            type = "host";
         } else if (guestBid > hostBid) {
             guestScore += prize;
-            msg = `GUEST WON (+${prize})`;
-            type = "danger";
+            msg = `WON ${prize}`;
+            type = "guest";
         }
+
+        // Check for early win (insurmountable lead)
+        // Use prizeGraveyard to account for tied points (which aren't awarded to anyone)
+        const prizeGraveyardSum = (gameData.prizeGraveyard || []).reduce((sum, p) => sum + p, 0);
+        const pointsRemaining = 91 - prizeGraveyardSum;  // Points from cards not yet played
+
+        // A player has insurmountable lead if their score > opponent's score + all remaining points
+        const hostHasWon = hostScore > guestScore + pointsRemaining;
+        const guestHasWon = guestScore > hostScore + pointsRemaining;
 
         // Calculate Time Deductions
         const roundStart = gameData.roundStart || Date.now();
@@ -715,13 +724,6 @@ function App() {
             nextUpdates[`games/${gameId}/guest/graveyard`] = newGuestGraveyard;
             nextUpdates[`games/${gameId}/prizeGraveyard`] = newPrizeGraveyard;
 
-            // Check for early win (insurmountable lead)
-            const prizeGraveyardSum = newPrizeGraveyard.reduce((sum, p) => sum + p, 0);
-            const pointsRemaining = 91 - prizeGraveyardSum + hostScore + guestScore;
-
-            const hostHasWon = hostScore > pointsRemaining;
-            const guestHasWon = guestScore > pointsRemaining;
-
             // Next Prize
             if ((gameData.prizeDeck && gameData.prizeDeck.length > 0) && !hostHasWon && !guestHasWon) {
                 nextUpdates[`games/${gameId}/currentPrize`] = gameData.prizeDeck[0];
@@ -733,12 +735,15 @@ function App() {
                 // Game ends (either no more cards or early win)
                 nextUpdates[`games/${gameId}/status`] = 'END';
                 nextUpdates[`games/${gameId}/currentPrize`] = null;
+
+                // Set log message for early win
                 if (hostHasWon || guestHasWon) {
                     nextUpdates[`games/${gameId}/log`] = {
                         msg: hostHasWon ? 'HOST WINS (INSURMOUNTABLE LEAD)' : 'GUEST WINS (INSURMOUNTABLE LEAD)',
-                        type: hostHasWon ? 'success' : 'danger'
+                        type: hostHasWon ? 'host' : 'guest'
                     };
                 }
+
                 // Handle Game End (Rating Updates) - Only Host runs this
                 handleGameEnd(hostScore, guestScore);
             }
@@ -1247,6 +1252,7 @@ function App() {
                 gameData={gameData}
                 currentLog={currentLog}
                 onForfeit={handleForfeit}
+                playerId={playerId}
             />
 
             {/* Main Arena */}

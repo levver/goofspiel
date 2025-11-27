@@ -22,12 +22,17 @@ export const setupPresence = async (gameId, playerId) => {
 };
 
 // Send heartbeat
-export const sendHeartbeat = async (gameId, playerId) => {
-    const presenceRef = ref(db, `games/${gameId}/presence/${playerId}`);
-    await update(presenceRef, {
-        online: true,
-        lastSeen: serverTimestamp()
-    });
+export const sendHeartbeat = async (gameId, playerId, currentTime) => {
+    const updates = {};
+    updates[`games/${gameId}/presence/${playerId}/online`] = true;
+    updates[`games/${gameId}/presence/${playerId}/lastSeen`] = serverTimestamp();
+
+    // Also sync timer if provided
+    if (currentTime !== undefined && currentTime !== null) {
+        updates[`games/${gameId}/${playerId}/time`] = currentTime;
+    }
+
+    await update(ref(db), updates);
 };
 
 // Clean up presence on leaving

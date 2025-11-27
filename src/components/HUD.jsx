@@ -1,6 +1,23 @@
 import React from 'react';
 
-const HUD = ({ gameData, currentLog, onForfeit }) => {
+const HUD = ({ gameData, currentLog, onForfeit, playerId }) => {
+    // Determine log style based on who won relative to current player
+    let logStyle = 'bg-slate-800 text-slate-300 border border-slate-700';
+
+    if (currentLog.type === playerId) {
+        // I won
+        logStyle = 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/30 shadow-glow-cyan';
+    } else if (currentLog.type === 'host' || currentLog.type === 'guest') {
+        // Opponent won (assuming type is host/guest and not me)
+        logStyle = 'bg-fuchsia-900/50 text-fuchsia-400 border border-fuchsia-500/30 shadow-glow-purple';
+    } else if (currentLog.type === 'success') {
+        // Legacy/Special success
+        logStyle = 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/30 shadow-glow-cyan';
+    } else if (currentLog.type === 'danger') {
+        // Legacy/Special danger
+        logStyle = 'bg-fuchsia-900/50 text-fuchsia-400 border border-fuchsia-500/30 shadow-glow-purple';
+    }
+
     return (
         <div className="relative z-20 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 p-3 flex justify-between items-center shadow-xl">
             <div className="flex flex-col">
@@ -10,11 +27,7 @@ const HUD = ({ gameData, currentLog, onForfeit }) => {
                 </span>
             </div>
 
-            <div className={`px-3 py-1 rounded text-xs font-mono font-bold tracking-wider transition-colors duration-300
-                ${currentLog.type === 'success' ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/30 shadow-glow-cyan' :
-                    currentLog.type === 'danger' ? 'bg-fuchsia-900/50 text-fuchsia-400 border border-fuchsia-500/30 shadow-glow-purple' :
-                        'bg-slate-800 text-slate-300 border border-slate-700'}
-            `}>
+            <div className={`px-3 py-1 rounded text-xs font-mono font-bold tracking-wider transition-colors duration-300 ${logStyle}`}>
                 {currentLog.msg}
             </div>
 
