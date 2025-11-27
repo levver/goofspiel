@@ -8,7 +8,7 @@ const EndScreen = ({
     onDeclineRematch
 }) => {
     return (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md animate-in fade-in p-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md animate-pop-in p-8">
             <div className="flex flex-col items-center w-full max-w-sm border border-slate-700 rounded-2xl p-8 bg-black/50 shadow-2xl">
                 <h1 className="text-5xl font-black text-white mb-2 tracking-tighter">
                     {myData.score > oppData.score ? <span className="text-cyan-400 drop-shadow-glow-cyan">VICTORY</span> :

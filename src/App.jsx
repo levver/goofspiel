@@ -10,7 +10,17 @@ import WaitingScreen from './components/WaitingScreen';
 import DisconnectWarning from './components/DisconnectWarning';
 import Lobby from './components/Lobby';
 import LoginScreen from './components/LoginScreen';
-import { RANKS, RESOLVE_ROUND_TIMER, INITIAL_TIME } from './utils/constants';
+import {
+    RANKS,
+    RESOLVE_ROUND_TIMER,
+    INITIAL_TIME,
+    CARD_LANDING_FLASH_DURATION,
+    TIE_ANIMATION_DURATION,
+    CARD_FLIGHT_DURATION,
+    PRIZE_ANIMATION_DELAY,
+    PRIZE_ANIMATION_CLEANUP,
+    PROGRESS_BAR_UPDATE_DELAY
+} from './utils/constants';
 import { shuffle } from './utils/helpers';
 import { db } from './utils/firebaseConfig';
 import { ref, set, onValue, update, push, child, get, serverTimestamp, onDisconnect, remove } from "firebase/database";
@@ -365,6 +375,19 @@ function App() {
     const myData = (gameData && (isHost ? gameData.host : gameData.guest)) || {};
     const oppData = (gameData && (isHost ? gameData.guest : gameData.host)) || {};
 
+    // Bids
+    const myBid = myData.bid;
+    const oppBid = oppData.bid;
+
+    // Opponent Card Landing Effect - only show when both players have played
+    useEffect(() => {
+        if (oppBid && gameData?.status === 'RESOLVING') {
+            setOppCardLanded(true);
+            const timer = setTimeout(() => setOppCardLanded(false), CARD_LANDING_FLASH_DURATION);
+            return () => clearTimeout(timer);
+        }
+    }, [oppBid, gameData?.status]);
+
     // Sync local time with server time when round changes or game starts
     useEffect(() => {
         if (myData && myData.time !== undefined) {
@@ -538,7 +561,100 @@ function App() {
         }
     }, [gameData, gameId, playerId, localTime, oppLocalTime, isHost]);
 
+    // Prize Animation Effect
+    useEffect(() => {
+        if (!gameData?.log) return;
+
+        // Check if log changed and is a win
+        const currentLog = gameData.log;
+        const prevLog = prevLogRef.current;
+
+        // Compare by message and type, not object reference
+        const logChanged = !prevLog ||
+            prevLog.msg !== currentLog.msg ||
+            prevLog.type !== currentLog.type;
+
+        if (logChanged) {
+            prevLogRef.current = { msg: currentLog.msg, type: currentLog.type };
+
+            // If it's a win message
+            if (currentLog.msg && currentLog.msg.includes('WON') && (currentLog.type === 'host' || currentLog.type === 'guest')) {
+                // Determine if I won
+                const iWon = currentLog.type === playerId;
+
+                // Get prize rank from message "WON 10" or "WON (+10)"
+                const match = currentLog.msg.match(/(\d+)/);
+                const prizeRank = match ? parseInt(match[1]) : null;
+
+                if (prizeRank && prizeSlotRef.current && progressBarRef.current) {
+                    // Delay the animation start slightly to let cards reveal first
+                    setTimeout(() => {
+                        if (!prizeSlotRef.current || !progressBarRef.current) return;
+
+                        const startRect = prizeSlotRef.current.getBoundingClientRect();
+                        const endRect = progressBarRef.current.getBoundingClientRect();
+
+                        setAnimatingPrize(prizeRank);
+                        setPrizeAnimationProps({
+                            position: 'fixed',
+                            top: startRect.top,
+                            left: startRect.left,
+                            width: startRect.width,
+                            height: startRect.height,
+                            zIndex: 100,
+                            transition: 'none',
+                            transform: 'scale(1)',
+                            opacity: 1
+                        });
+
+                        requestAnimationFrame(() => {
+                            const targetX = iWon
+                                ? endRect.left + (endRect.width * 0.25) // 25% from left
+                                : endRect.left + (endRect.width * 0.75); // 75% from left (25% from right)
+
+                            const targetY = endRect.top + (endRect.height / 2) - (startRect.height / 2);
+
+                            requestAnimationFrame(() => {
+                                setPrizeAnimationProps({
+                                    position: 'fixed',
+                                    top: targetY,
+                                    left: targetX - (startRect.width / 2),
+                                    width: startRect.width,
+                                    height: startRect.height,
+                                    zIndex: 100,
+                                    transition: 'all 2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                                    transform: 'scale(0.2)',
+                                    opacity: 0
+                                });
+                            });
+                        });
+
+                        // Cleanup after animation completes
+                        setTimeout(() => {
+                            setAnimatingPrize(null);
+                            setPrizeAnimationProps(null);
+                        }, PRIZE_ANIMATION_CLEANUP);
+                    }, PRIZE_ANIMATION_DELAY);
+                }
+            }
+        }
+    }, [gameData?.log, playerId]);
+
+
+
     const [isMatching, setIsMatching] = useState(false);
+    const [tieAnimation, setTieAnimation] = useState(false);
+
+    // Prize Animation State
+    const prizeSlotRef = useRef(null);
+    const progressBarRef = useRef(null);
+    const [animatingPrize, setAnimatingPrize] = useState(null);
+    const [prizeAnimationProps, setPrizeAnimationProps] = useState(null);
+    const prevLogRef = useRef(null);
+
+    // Card Landing Effects
+    const [myCardLanded, setMyCardLanded] = useState(false);
+    const [oppCardLanded, setOppCardLanded] = useState(false);
 
     // Monitor Matchmaking Queue
     useEffect(() => {
@@ -671,6 +787,11 @@ function App() {
         let msg = "TIED (0)";
         let type = "warning";
 
+        if (hostBid === guestBid) {
+            setTieAnimation(true);
+            setTimeout(() => setTieAnimation(false), TIE_ANIMATION_DURATION);
+        }
+
         if (hostBid > guestBid) {
             hostScore += prize;
             msg = `WON ${prize}`;
@@ -683,8 +804,12 @@ function App() {
 
         // Check for early win (insurmountable lead)
         // Use prizeGraveyard to account for tied points (which aren't awarded to anyone)
-        const prizeGraveyardSum = (gameData.prizeGraveyard || []).reduce((sum, p) => sum + p, 0);
-        const pointsRemaining = 91 - prizeGraveyardSum;  // Points from cards not yet played
+        // Check for early win (insurmountable lead)
+        // Use prizeGraveyard to account for tied points (which aren't awarded to anyone)
+        // MUST include the current prize which was just played!
+        const currentPrizeGraveyardSum = (gameData.prizeGraveyard || []).reduce((sum, p) => sum + p, 0);
+        const totalPlayedPoints = currentPrizeGraveyardSum + prize;
+        const pointsRemaining = 91 - totalPlayedPoints;  // Points from cards not yet played
 
         // A player has insurmountable lead if their score > opponent's score + all remaining points
         const hostHasWon = hostScore > guestScore + pointsRemaining;
@@ -749,7 +874,7 @@ function App() {
             }
 
             update(ref(db), nextUpdates);
-        }, 3000); // 3 seconds to see result
+        }, RESOLVE_ROUND_TIMER); // 1 seconds to see result
     };
 
     const handleOpponentDisconnect = async () => {
@@ -1171,7 +1296,11 @@ function App() {
 
             setAnimatingCard(null);
             setAnimationProps(null);
-        }, 600);
+
+            // Trigger landing effect
+            setMyCardLanded(true);
+            setTimeout(() => setMyCardLanded(false), CARD_LANDING_FLASH_DURATION);
+        }, CARD_FLIGHT_DURATION);
     };
 
 
@@ -1210,10 +1339,6 @@ function App() {
     // Opponent Hand (Hidden)
     const oppHandCount = oppData.hand ? oppData.hand.length : 0;
     const oppHand = Array(oppHandCount).fill(0).map((_, i) => i + 1); // Dummy array for rendering
-
-    // Bids
-    const myBid = myData.bid;
-    const oppBid = oppData.bid;
 
     // Show bids only if resolving or if it's my bid
     const showMyBid = !!myBid;
@@ -1282,12 +1407,14 @@ function App() {
                     <div className="flex-1 flex flex-col items-center justify-center relative">
 
                         {/* Progress Bar */}
-                        <ProgressBar
-                            myScore={myData.score}
-                            oppScore={oppData.score}
-                            prizeGraveyard={gameData.prizeGraveyard}
-                            status={gameData.status}
-                        />
+                        <div ref={progressBarRef} className="w-full flex justify-center">
+                            <ProgressBar
+                                myScore={myData.score}
+                                oppScore={oppData.score}
+                                prizeGraveyard={gameData.prizeGraveyard}
+                                status={gameData.status}
+                            />
+                        </div>
 
                         <HorizontalGraveyard usedCards={gameData.prizeGraveyard || []} type="prize" />
 
@@ -1297,7 +1424,7 @@ function App() {
                                 {/* Player Slot (Left) */}
                                 <div
                                     ref={playerSlotRef}
-                                    className="relative w-24 h-32 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30"
+                                    className={`relative w-24 h-32 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30 ${myCardLanded ? 'animate-flash shadow-glow-cyan' : ''}`}
                                 >
                                     <span className="text-[8px] font-mono text-cyan-500/50 absolute -top-3">YOU</span>
                                     {myBid && !animatingCard && (
@@ -1308,7 +1435,7 @@ function App() {
                                 </div>
 
                                 {/* Prize Slot */}
-                                <div className="relative z-10 -mt-6">
+                                <div ref={prizeSlotRef} className="relative z-10 -mt-6">
                                     <div className="absolute -inset-4 bg-yellow-500/10 blur-xl rounded-full animate-pulse"></div>
                                     {gameData.currentPrize ? (
                                         <DataChip rank={gameData.currentPrize} type="prize" highlight={true} />
@@ -1320,14 +1447,14 @@ function App() {
                                 </div>
 
                                 {/* Opponent Slot (Right) */}
-                                <div className="relative w-24 h-32 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30">
+                                <div className={`relative w-24 h-32 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30 ${oppCardLanded ? 'animate-flash shadow-glow-purple' : ''}`}>
                                     <span className="text-[8px] font-mono text-fuchsia-500/50 absolute -top-3">OPP</span>
-                                    {oppBid && showOppBid ? (
-                                        <div className="animate-in fade-in zoom-in duration-300">
+                                    {oppBid ? (
+                                        <div className={`transition-all duration-500 ${showOppBid ? 'animate-flip-in' : ''}`}>
                                             <DataChip
-                                                rank={oppBid}
+                                                rank={showOppBid ? oppBid : 0} // 0 or null for face down
                                                 type="cpu"
-                                                faceDown={false}
+                                                faceDown={!showOppBid}
                                                 compact={true}
                                             />
                                         </div>
@@ -1400,6 +1527,15 @@ function App() {
                 <DisconnectWarning oppDisconnectTime={oppDisconnectTime} />
             )}
 
+            {/* Tie Animation Overlay */}
+            {tieAnimation && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+                    <div className="text-6xl font-black text-yellow-400 tracking-tighter animate-shake drop-shadow-[0_0_15px_rgba(255,255,0,0.8)]">
+                        TIE
+                    </div>
+                </div>
+            )}
+
             {/* End Screen */}
             {gameData.status === 'END' && (
                 <EndScreen
@@ -1409,6 +1545,18 @@ function App() {
                     onRequestRematch={handleRequestRematch}
                     onDeclineRematch={handleDeclineRematch}
                 />
+            )}
+            {/* Animating Prize Card */}
+            {animatingPrize && prizeAnimationProps && (
+                <div
+                    className="fixed pointer-events-none"
+                    style={{
+                        ...prizeAnimationProps,
+                        zIndex: 100
+                    }}
+                >
+                    <DataChip rank={animatingPrize} type="prize" highlight={true} />
+                </div>
             )}
         </div>
     );

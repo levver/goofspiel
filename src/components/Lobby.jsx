@@ -115,7 +115,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                         <>
                             <button
                                 onClick={onFindMatch}
-                                className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-glow-cyan uppercase tracking-widest"
+                                className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-glow-cyan-soft uppercase tracking-widest"
                             >
                                 FIND MATCH
                             </button>
@@ -129,7 +129,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                     )}
                     <button
                         onClick={onCreateGame}
-                        className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 px-6 rounded transition-all transform hover:scale-105 shadow-glow-cyan uppercase tracking-widest"
+                        className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 px-6 rounded transition-all transform hover:scale-105 shadow-glow-cyan-soft uppercase tracking-widest"
                     >
                         Create New Game
                     </button>

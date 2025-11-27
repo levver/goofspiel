@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PROGRESS_BAR_UPDATE_DELAY } from '../utils/constants';
 
 const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status }) => {
     const [displayScores, setDisplayScores] = useState({ my: myScore, opp: oppScore, graveyard: prizeGraveyard });
@@ -8,7 +9,7 @@ const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status }) => {
             // Delay update during resolution animation
             const timer = setTimeout(() => {
                 setDisplayScores({ my: myScore, opp: oppScore, graveyard: prizeGraveyard });
-            }, 3000); // Wait for animation to finish
+            }, PROGRESS_BAR_UPDATE_DELAY);
             return () => clearTimeout(timer);
         } else {
             // Immediate update otherwise
