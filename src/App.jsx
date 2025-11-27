@@ -156,9 +156,18 @@ function App() {
 
     // --- Firebase Logic ---
 
+    // Helper function to generate short game IDs (6 characters, alphanumeric)
+    const generateShortGameId = () => {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excluding ambiguous chars (I, O, 0, 1, L)
+        let id = '';
+        for (let i = 0; i < 6; i++) {
+            id += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return id;
+    };
+
     const createGame = () => {
-        const newGameRef = push(child(ref(db), 'games'));
-        const newGameId = newGameRef.key;
+        const newGameId = generateShortGameId();
 
         const initialGameData = {
             status: 'WAITING',
@@ -185,7 +194,7 @@ function App() {
         initialGameData.currentPrize = initialGameData.prizeDeck[0];
         initialGameData.prizeDeck = initialGameData.prizeDeck.slice(1);
 
-        set(newGameRef, initialGameData);
+        set(ref(db, `games/${newGameId}`), initialGameData);
         setGameId(newGameId);
         setPlayerId('host');
 
@@ -471,6 +480,64 @@ function App() {
         }
     }, [gameData?.rematch, gameData?.status, oppData, playerId, rematchStatus]);
 
+    // Monitor for timeouts
+    useEffect(() => {
+        if (!gameData || !gameId || !playerId) return;
+        if (gameData.status !== 'PLAYING') return;
+
+        const myData = playerId === 'host' ? gameData.host : gameData.guest;
+        const oppData = playerId === 'host' ? gameData.guest : gameData.host;
+
+        // Check if either player timed out
+        if (localTime <= 0 || oppLocalTime <= 0) {
+            const iTimedOut = localTime <= 0;
+            const oppTimedOut = oppLocalTime <= 0;
+
+            // Only host processes the timeout
+            if (playerId === 'host') {
+                const hostTimedOut = isHost ? iTimedOut : oppTimedOut;
+                const guestTimedOut = isHost ? oppTimedOut : iTimedOut;
+
+                // Determine scores (timed out player loses)
+                let hostScore, guestScore;
+                if (hostTimedOut && !guestTimedOut) {
+                    hostScore = 0;
+                    guestScore = 999;
+                } else if (guestTimedOut && !hostTimedOut) {
+                    hostScore = 999;
+                    guestScore = 0;
+                } else {
+                    // Both timed out (shouldn't happen) - use current scores
+                    hostScore = gameData.host.score;
+                    guestScore = gameData.guest.score;
+                }
+
+                console.log('[TIMEOUT] Player timed out:', hostTimedOut ? 'host' : 'guest');
+
+                // End the game
+                const updates = {};
+                updates[`games/${gameId}/status`] = 'END';
+                updates[`games/${gameId}/host/score`] = hostScore;
+                updates[`games/${gameId}/guest/score`] = guestScore;
+                updates[`games/${gameId}/log`] = {
+                    msg: hostTimedOut ? 'HOST TIMED OUT' : 'GUEST TIMED OUT',
+                    type: 'danger'
+                };
+
+                update(ref(db), updates).then(() => {
+                    // Update ratings
+                    handleGameEnd(hostScore, guestScore);
+
+                    // Clear localStorage
+                    localStorage.removeItem('activeGame');
+                });
+            } else {
+                // Guest just clears their localStorage
+                localStorage.removeItem('activeGame');
+            }
+        }
+    }, [gameData, gameId, playerId, localTime, oppLocalTime, isHost]);
+
     const [isMatching, setIsMatching] = useState(false);
 
     // Monitor Matchmaking Queue
@@ -648,16 +715,30 @@ function App() {
             nextUpdates[`games/${gameId}/guest/graveyard`] = newGuestGraveyard;
             nextUpdates[`games/${gameId}/prizeGraveyard`] = newPrizeGraveyard;
 
+            // Check for early win (insurmountable lead)
+            const prizeGraveyardSum = newPrizeGraveyard.reduce((sum, p) => sum + p, 0);
+            const pointsRemaining = 91 - prizeGraveyardSum + hostScore + guestScore;
+
+            const hostHasWon = hostScore > pointsRemaining;
+            const guestHasWon = guestScore > pointsRemaining;
+
             // Next Prize
-            if (gameData.prizeDeck && gameData.prizeDeck.length > 0) {
+            if ((gameData.prizeDeck && gameData.prizeDeck.length > 0) && !hostHasWon && !guestHasWon) {
                 nextUpdates[`games/${gameId}/currentPrize`] = gameData.prizeDeck[0];
                 nextUpdates[`games/${gameId}/prizeDeck`] = gameData.prizeDeck.slice(1);
                 nextUpdates[`games/${gameId}/status`] = 'PLAYING';
                 nextUpdates[`games/${gameId}/round`] = gameData.round + 1;
                 nextUpdates[`games/${gameId}/roundStart`] = serverTimestamp();
             } else {
+                // Game ends (either no more cards or early win)
                 nextUpdates[`games/${gameId}/status`] = 'END';
                 nextUpdates[`games/${gameId}/currentPrize`] = null;
+                if (hostHasWon || guestHasWon) {
+                    nextUpdates[`games/${gameId}/log`] = {
+                        msg: hostHasWon ? 'HOST WINS (INSURMOUNTABLE LEAD)' : 'GUEST WINS (INSURMOUNTABLE LEAD)',
+                        type: hostHasWon ? 'success' : 'danger'
+                    };
+                }
                 // Handle Game End (Rating Updates) - Only Host runs this
                 handleGameEnd(hostScore, guestScore);
             }
@@ -781,8 +862,7 @@ function App() {
         console.log('[REMATCH] Creating new game for rematch...');
 
         // Create a new game (instead of resetting the old one)
-        const newGameRef = push(child(ref(db), 'games'));
-        const newGameId = newGameRef.key;
+        const newGameId = generateShortGameId();
 
         const prizeDeck = shuffle([...RANKS]);
         const newGameData = {
@@ -809,6 +889,7 @@ function App() {
                 name: gameData.guest.name
             },
             prizeGraveyard: [],
+            log: { msg: `ROUND 1`, type: 'neutral' },
             lastAction: Date.now(),
             roundStart: serverTimestamp(),
             rematch: {
@@ -824,7 +905,7 @@ function App() {
         };
 
         // Create the new game
-        await set(newGameRef, newGameData);
+        await set(ref(db, `games/${newGameId}`), newGameData);
 
         console.log('[REMATCH] New game created:', newGameId);
 
@@ -930,8 +1011,7 @@ function App() {
 
         console.log('[MATCHMAKING] Host assignment:', iAmHost ? 'I am host' : 'Opponent is host');
 
-        const newGameRef = push(child(ref(db), 'games'));
-        const newGameId = newGameRef.key;
+        const newGameId = generateShortGameId();
 
         const prizeDeck = shuffle([...RANKS]);
         const initialGameData = {
@@ -939,25 +1019,42 @@ function App() {
             round: 1,
             prizeDeck: prizeDeck.slice(1),
             currentPrize: prizeDeck[0],
-            host: {
+            host: iAmHost ? {
                 score: 0,
                 hand: [...RANKS],
                 bid: null,
                 graveyard: [],
                 time: INITIAL_TIME,
-                id: iAmHost ? userId : opponent.userId,
-                name: iAmHost ? getUserName() : opponent.name
+                id: userId,
+                name: getUserName()
+            } : {
+                score: 0,
+                hand: [...RANKS],
+                bid: null,
+                graveyard: [],
+                time: INITIAL_TIME,
+                id: opponent.userId,
+                name: opponent.name
             },
-            guest: {
+            guest: iAmHost ? {
                 score: 0,
                 hand: [...RANKS],
                 bid: null,
                 graveyard: [],
                 time: INITIAL_TIME,
-                id: iAmHost ? opponent.userId : userId,
-                name: iAmHost ? opponent.name : getUserName()
+                id: opponent.userId,
+                name: opponent.name
+            } : {
+                score: 0,
+                hand: [...RANKS],
+                bid: null,
+                graveyard: [],
+                time: INITIAL_TIME,
+                id: userId,
+                name: getUserName()
             },
             prizeGraveyard: [],
+            log: { msg: `ROUND 1`, type: 'neutral' },
             lastAction: Date.now(),
             roundStart: serverTimestamp(),
             rematch: {
@@ -972,7 +1069,7 @@ function App() {
         };
 
         // Create the game
-        await set(newGameRef, initialGameData);
+        await set(ref(db, `games/${newGameId}`), initialGameData);
         console.log('[MATCHMAKING] Game created:', newGameId);
 
         // Update MY queue entry with the gameId
