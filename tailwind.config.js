@@ -19,6 +19,14 @@ export default {
                     '0%': { backgroundPosition: '100% 0' },
                     '100%': { backgroundPosition: '0% 0' },
                 },
+                'ripple-up': {
+                    '0%': { backgroundPosition: '0 0' },
+                    '100%': { backgroundPosition: '0 -200%' },
+                },
+                'ripple-down': {
+                    '0%': { backgroundPosition: '0 0' },
+                    '100%': { backgroundPosition: '0 200%' },
+                },
                 wiggle: {
                     '0%': { transform: 'rotate(-3deg)' },
                     '50%': { transform: 'rotate(3deg)' },
@@ -28,6 +36,8 @@ export default {
             animation: {
                 'ripple-left': 'ripple-left 0.6s linear infinite',
                 'ripple-right': 'ripple-right 0.6s linear infinite',
+                'ripple-up': 'ripple-up 0.8s linear infinite',
+                'ripple-down': 'ripple-down 0.8s linear infinite',
                 'wiggle': 'wiggle 1s ease-in-out infinite',
             },
             boxShadow: {

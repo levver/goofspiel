@@ -758,6 +758,23 @@ function App() {
         }, 2000);
     };
 
+    const handleCancelWaiting = async () => {
+        if (!gameId) return;
+
+        console.log('[CANCEL] Cancelling game creation:', gameId);
+
+        // Remove the game from database
+        await set(ref(db, `games/${gameId}`), null);
+
+        // Clear localStorage
+        localStorage.removeItem('activeGame');
+
+        // Reset state to return to lobby
+        setGameId(null);
+        setPlayerId(null);
+        setGameData(null);
+    };
+
     const handleRematchAccepted = async () => {
         if (playerId !== 'host' || !gameData) return; // Only host creates the new game
 
@@ -1083,7 +1100,7 @@ function App() {
     }
 
     if (gameData.status === 'WAITING') {
-        return <WaitingScreen gameId={gameId} />;
+        return <WaitingScreen gameId={gameId} onCancel={playerId === 'host' ? handleCancelWaiting : null} />;
     }
 
 
@@ -1104,11 +1121,11 @@ function App() {
 
     const getCardStyle = (index, total) => {
         const isMobile = window.innerWidth < 640;
-        const arcStrength = isMobile ? 4 : 6;
-        const spread = isMobile ? 25 : 35;
+        const arcStrength = isMobile ? 6 : 8;
+        const spread = isMobile ? 30 : 45;
         const middle = (total - 1) / 2;
         const diff = index - middle;
-        const rotation = diff * (isMobile ? 3 : 4);
+        const rotation = diff * (isMobile ? 5 : 6);
         const yOffset = Math.abs(diff) * arcStrength;
 
         return {
@@ -1155,8 +1172,8 @@ function App() {
                 {/* Arena Middle */}
                 <div className="flex-1 flex items-stretch relative overflow-hidden">
 
-                    {/* Opponent Graveyard */}
-                    <VerticalGraveyard usedCards={oppData.graveyard || []} type="cpu" />
+                    {/* Player Graveyard (Left) */}
+                    <VerticalGraveyard usedCards={myData.graveyard || []} type="player" />
 
                     {/* Center Card Area */}
                     <div className="flex-1 flex flex-col items-center justify-center relative">
@@ -1174,8 +1191,33 @@ function App() {
                         <div className="flex-1 flex items-center justify-center w-full">
                             <div className="flex items-center justify-center gap-2 sm:gap-6 w-full scale-90 sm:scale-100">
 
-                                {/* Opponent Slot */}
-                                <div className="relative w-20 h-28 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30">
+                                {/* Player Slot (Left) */}
+                                <div
+                                    ref={playerSlotRef}
+                                    className="relative w-24 h-32 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30"
+                                >
+                                    <span className="text-[8px] font-mono text-cyan-500/50 absolute -top-3">YOU</span>
+                                    {myBid && !animatingCard && (
+                                        <div className="animate-in fade-in zoom-in duration-300">
+                                            <DataChip rank={myBid} type="player" compact={true} />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Prize Slot */}
+                                <div className="relative z-10 -mt-6">
+                                    <div className="absolute -inset-4 bg-yellow-500/10 blur-xl rounded-full animate-pulse"></div>
+                                    {gameData.currentPrize ? (
+                                        <DataChip rank={gameData.currentPrize} type="prize" highlight={true} />
+                                    ) : (
+                                        <div className="w-24 h-32 border border-yellow-500/30 rounded-xl flex items-center justify-center">
+                                            <Activity className="text-yellow-500 animate-spin" />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Opponent Slot (Right) */}
+                                <div className="relative w-24 h-32 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30">
                                     <span className="text-[8px] font-mono text-fuchsia-500/50 absolute -top-3">OPP</span>
                                     {oppBid && showOppBid ? (
                                         <div className="animate-in fade-in zoom-in duration-300">
@@ -1193,37 +1235,12 @@ function App() {
                                         </div>
                                     )}
                                 </div>
-
-                                {/* Prize Slot */}
-                                <div className="relative z-10 -mt-6">
-                                    <div className="absolute -inset-4 bg-yellow-500/10 blur-xl rounded-full animate-pulse"></div>
-                                    {gameData.currentPrize ? (
-                                        <DataChip rank={gameData.currentPrize} type="prize" highlight={true} />
-                                    ) : (
-                                        <div className="w-20 h-28 border border-yellow-500/30 rounded-xl flex items-center justify-center">
-                                            <Activity className="text-yellow-500 animate-spin" />
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Player Slot */}
-                                <div
-                                    ref={playerSlotRef}
-                                    className="relative w-20 h-28 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30"
-                                >
-                                    <span className="text-[8px] font-mono text-cyan-500/50 absolute -top-3">YOU</span>
-                                    {myBid && !animatingCard && (
-                                        <div className="animate-in fade-in zoom-in duration-300">
-                                            <DataChip rank={myBid} type="player" compact={true} />
-                                        </div>
-                                    )}
-                                </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Player Graveyard */}
-                    <VerticalGraveyard usedCards={myData.graveyard || []} type="player" />
+                    {/* Opponent Graveyard (Right) */}
+                    <VerticalGraveyard usedCards={oppData.graveyard || []} type="cpu" />
 
                 </div>
 

@@ -6,9 +6,6 @@ export const VerticalGraveyard = ({ usedCards, type }) => {
     const theme = THEME[type];
     return (
         <div className={`h-full flex flex-col items-center py-2 px-1 w-10 sm:w-12 bg-slate-900/40 border-${type === 'cpu' ? 'r' : 'l'} border-slate-800/50 backdrop-blur-sm`}>
-            <div className={`text-[8px] font-mono uppercase tracking-widest mb-2 ${theme.color} opacity-70`}>
-                {type === 'cpu' ? 'VOID' : 'UNIT'}
-            </div>
             <div className="flex-1 flex flex-col justify-between w-full gap-1">
                 {RANKS.map(r => {
                     const isUsed = usedCards.includes(r);

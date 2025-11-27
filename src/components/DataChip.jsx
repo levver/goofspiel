@@ -17,8 +17,8 @@ const DataChip = ({
     const Icon = theme.icon;
     const label = RANK_LABELS[rank] || (rank < 10 ? `0${rank}` : rank);
 
-    const widthClass = compact ? 'w-16' : 'w-20 sm:w-24';
-    const heightClass = compact ? 'h-24' : 'h-28 sm:h-36';
+    const widthClass = compact ? 'w-20' : 'w-24 sm:w-28';
+    const heightClass = compact ? 'h-28' : 'h-32 sm:h-40';
     const textSize = compact ? 'text-sm' : 'text-lg';
 
     if (faceDown) {
