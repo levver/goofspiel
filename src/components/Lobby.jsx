@@ -56,7 +56,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
             <div className="relative w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-2xl p-8 shadow-2xl">
                 {/* Header */}
                 <div className="text-center mb-8">
-                    <Shield className="w-20 h-20 mx-auto mb-4 text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]" />
+                    <Shield className="w-20 h-20 mx-auto mb-4 text-cyan-400 drop-shadow-glow-cyan" />
                     <h1 className="text-5xl font-black text-white mb-2 tracking-tighter">GOOFSPIEL</h1>
                     <p className="text-slate-400 font-mono text-sm tracking-widest">CYBER OPS PROTOCOL</p>
 
@@ -97,7 +97,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
 
                 <div className="flex flex-col gap-4 w-full z-10">
                     {isSearching ? (
-                        <div className="bg-cyan-500/10 border border-cyan-500/50 rounded-lg p-6 text-center space-y-3">
+                        <div className="bg-cyan-500/10 border border-cyan-500/50 rounded-lg p-6 text-center space-y-3 shadow-glow-cyan">
                             <div className="text-cyan-400 font-bold text-lg uppercase tracking-widest animate-pulse">
                                 SEARCHING FOR OPPONENT...
                             </div>
@@ -115,7 +115,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                         <>
                             <button
                                 onClick={onFindMatch}
-                                className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(6,182,212,0.5)] uppercase tracking-widest"
+                                className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-glow-cyan uppercase tracking-widest"
                             >
                                 FIND MATCH
                             </button>
@@ -129,7 +129,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                     )}
                     <button
                         onClick={onCreateGame}
-                        className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 px-6 rounded transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(6,182,212,0.5)] uppercase tracking-widest"
+                        className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 px-6 rounded transition-all transform hover:scale-105 shadow-glow-cyan uppercase tracking-widest"
                     >
                         Create New Game
                     </button>
@@ -146,7 +146,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                             value={joinCode}
                             onChange={(e) => setJoinCode(e.target.value)}
                             placeholder="ENTER ACCESS CODE"
-                            className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-center font-mono text-lg tracking-widest text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-all"
+                            className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-center font-mono text-lg tracking-widest text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 focus:shadow-glow-cyan transition-all"
                         />
                         <button
                             type="submit"

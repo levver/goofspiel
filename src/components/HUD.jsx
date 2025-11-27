@@ -11,8 +11,8 @@ const HUD = ({ gameData, currentLog, onForfeit }) => {
             </div>
 
             <div className={`px-3 py-1 rounded text-xs font-mono font-bold tracking-wider transition-colors duration-300
-                ${currentLog.type === 'success' ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.4)]' :
-                    currentLog.type === 'danger' ? 'bg-fuchsia-900/50 text-fuchsia-400 border border-fuchsia-500/30 shadow-[0_0_15px_rgba(217,70,239,0.4)]' :
+                ${currentLog.type === 'success' ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/30 shadow-glow-cyan' :
+                    currentLog.type === 'danger' ? 'bg-fuchsia-900/50 text-fuchsia-400 border border-fuchsia-500/30 shadow-glow-purple' :
                         'bg-slate-800 text-slate-300 border border-slate-700'}
             `}>
                 {currentLog.msg}
@@ -20,7 +20,7 @@ const HUD = ({ gameData, currentLog, onForfeit }) => {
 
             <div className="flex flex-col items-end">
                 <span className="text-[10px] text-slate-500 font-mono tracking-widest">REMAINING POOL</span>
-                <span className="text-xl font-bold text-yellow-500 font-mono leading-none drop-shadow-[0_0_10px_rgba(234,179,8,0.6)]">
+                <span className="text-xl font-bold text-yellow-500 font-mono leading-none drop-shadow-glow-gold">
                     {91 - (gameData.prizeGraveyard ? gameData.prizeGraveyard.reduce((a, b) => a + b, 0) : 0) - (gameData.currentPrize || 0)}
                 </span>
             </div>

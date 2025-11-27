@@ -30,17 +30,17 @@ const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status }) => {
                 {/* My progress from left */}
                 <div
                     style={{ width: `${myPercentage}%` }}
-                    className="absolute left-0 h-full bg-cyan-500 transition-all duration-500 shadow-[0_0_20px_rgba(6,182,212,0.6)] animate-wiggle"
+                    className="absolute left-0 h-full bg-[image:linear-gradient(90deg,#06b6d4_0%,#67e8f9_25%,#06b6d4_50%,#67e8f9_75%,#06b6d4_100%)] bg-[length:200%_100%] transition-all duration-500 shadow-glow-cyan animate-ripple-right"
                 />
 
                 {/* Opponent progress from right */}
                 <div
                     style={{ width: `${oppPercentage}%` }}
-                    className="absolute right-0 h-full bg-fuchsia-500 transition-all duration-500 shadow-[0_0_20px_rgba(217,70,239,0.6)] animate-wiggle"
+                    className="absolute right-0 h-full bg-[image:linear-gradient(90deg,#d946ef_0%,#f0abfc_25%,#d946ef_50%,#f0abfc_75%,#d946ef_100%)] bg-[length:200%_100%] transition-all duration-500 shadow-glow-purple animate-ripple-left"
                 />
 
                 {/* Center marker (50% line) */}
-                <div className="absolute left-1/2 -translate-x-1/2 w-0.5 h-full bg-yellow-400 z-10 shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
+                <div className="absolute left-1/2 -translate-x-1/2 w-0.5 h-full bg-yellow-400 z-10 shadow-glow-gold" />
             </div>
 
             {/* Score labels */}

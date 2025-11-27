@@ -53,7 +53,7 @@ const LoginScreen = () => {
             <div className="relative z-10 w-full max-w-md p-8">
                 {/* Title */}
                 <div className="text-center mb-8">
-                    <Shield className="w-16 h-16 mx-auto mb-4 text-cyan-400" />
+                    <Shield className="w-16 h-16 mx-auto mb-4 text-cyan-400 drop-shadow-glow-cyan" />
                     <h1 className="text-4xl font-black text-white mb-2 tracking-tighter">GOOFSPIEL</h1>
                     <p className="text-slate-400 font-mono text-sm tracking-widest">TACTICAL CARD WARFARE</p>
                 </div>
@@ -69,7 +69,7 @@ const LoginScreen = () => {
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full bg-slate-800/50 border border-slate-700 rounded px-10 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                                    className="w-full bg-slate-800/50 border border-slate-700 rounded px-10 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:shadow-glow-cyan transition-colors"
                                     placeholder="player@goofspiel.com"
                                     required
                                 />
@@ -84,7 +84,7 @@ const LoginScreen = () => {
                                     type="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full bg-slate-800/50 border border-slate-700 rounded px-10 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                                    className="w-full bg-slate-800/50 border border-slate-700 rounded px-10 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:shadow-glow-cyan transition-colors"
                                     placeholder="••••••••"
                                     required
                                     minLength={6}
@@ -101,7 +101,7 @@ const LoginScreen = () => {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 rounded transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(6,182,212,0.5)] uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 rounded transition-all transform hover:scale-105 shadow-glow-cyan uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loading ? 'LOADING...' : (isSignUp ? 'SIGN UP' : 'SIGN IN')}
                         </button>

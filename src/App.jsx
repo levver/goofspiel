@@ -13,7 +13,7 @@ import LoginScreen from './components/LoginScreen';
 import { RANKS, RESOLVE_ROUND_TIMER, INITIAL_TIME } from './utils/constants';
 import { shuffle } from './utils/helpers';
 import { db } from './utils/firebaseConfig';
-import { ref, set, onValue, update, push, child, get, serverTimestamp, onDisconnect } from "firebase/database";
+import { ref, set, onValue, update, push, child, get, serverTimestamp, onDisconnect, remove } from "firebase/database";
 import { getUserId, getUserName, getUserProfile, updateUserProfile } from './utils/userManager';
 import { calculateNewRating } from './utils/glicko';
 import { auth } from './utils/firebaseConfig';
