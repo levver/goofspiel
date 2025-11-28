@@ -806,6 +806,14 @@ function App() {
     const resolveRound = () => {
         if (!gameData) return;
 
+        console.log('[RESOLVE] Starting round resolution', {
+            round: gameData.round,
+            hostBid: gameData.host.bid,
+            guestBid: gameData.guest.bid,
+            prize: gameData.currentPrize,
+            currentScores: { host: gameData.host.score, guest: gameData.guest.score }
+        });
+
         const hostBid = gameData.host.bid;
         const guestBid = gameData.guest.bid;
         const prize = gameData.currentPrize;
@@ -830,8 +838,12 @@ function App() {
             type = ROLES.GUEST;
         }
 
-        // Check for early win (insurmountable lead)
-        // Use prizeGraveyard to account for tied points (which aren't awarded to anyone)
+        console.log('[RESOLVE] Calculated outcome', {
+            winner: type,
+            newScores: { host: hostScore, guest: guestScore },
+            msg
+        });
+
         // Check for early win (insurmountable lead)
         // Use prizeGraveyard to account for tied points (which aren't awarded to anyone)
         // MUST include the current prize which was just played!
@@ -860,10 +872,13 @@ function App() {
         updates[`games/${gameId}/guest/time`] = newGuestTime;
         updates[`games/${gameId}/log`] = { msg, type }; // Shared log
 
+        console.log('[RESOLVE] Sending immediate updates', updates);
         update(ref(db), updates);
 
         // Delay for next round
+        console.log(`[RESOLVE] Waiting ${RESOLVE_ROUND_TIMER}ms for next round...`);
         setTimeout(() => {
+            console.log('[RESOLVE] Timer finished, preparing next round updates');
             const nextUpdates = {};
 
             // Move bids to graveyard
@@ -901,6 +916,7 @@ function App() {
                 handleGameEnd(hostScore, guestScore);
             }
 
+            console.log('[RESOLVE] Sending next round updates', nextUpdates);
             update(ref(db), nextUpdates);
         }, RESOLVE_ROUND_TIMER); // 1 seconds to see result
     };
@@ -1441,6 +1457,7 @@ function App() {
                                 oppScore={oppData.score}
                                 prizeGraveyard={gameData.prizeGraveyard}
                                 status={gameData.status}
+                                currentPrize={gameData.currentPrize}
                             />
                         </div>
 

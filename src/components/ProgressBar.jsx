@@ -1,21 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { PROGRESS_BAR_UPDATE_DELAY } from '../utils/constants';
 
-const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status }) => {
+const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize }) => {
     const [displayScores, setDisplayScores] = useState({ my: myScore, opp: oppScore, graveyard: prizeGraveyard });
 
     useEffect(() => {
         if (status === 'RESOLVING') {
             // Delay update during resolution animation
             const timer = setTimeout(() => {
-                setDisplayScores({ my: myScore, opp: oppScore, graveyard: prizeGraveyard });
+                // Optimistically add current prize to graveyard to prevent total points fluctuation
+                // because score updates immediately but graveyard updates after delay
+                const optimisticGraveyard = currentPrize
+                    ? [...(prizeGraveyard || []), currentPrize]
+                    : (prizeGraveyard || []);
+
+                setDisplayScores({
+                    my: myScore,
+                    opp: oppScore,
+                    graveyard: optimisticGraveyard
+                });
             }, PROGRESS_BAR_UPDATE_DELAY);
             return () => clearTimeout(timer);
         } else {
             // Immediate update otherwise
             setDisplayScores({ my: myScore, opp: oppScore, graveyard: prizeGraveyard });
         }
-    }, [myScore, oppScore, prizeGraveyard, status]);
+    }, [myScore, oppScore, prizeGraveyard, status, currentPrize]);
 
     // Total available points = 91 - (points already won by both players)
     const totalAvailablePoints = 91 - (displayScores.graveyard || []).reduce((a, b) => a + b, 0) + displayScores.my + displayScores.opp;
