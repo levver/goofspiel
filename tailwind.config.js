@@ -50,6 +50,10 @@ export default {
                     '0%': { opacity: '1' },
                     '50%': { opacity: '0.5' },
                     '100%': { opacity: '1' }
+                },
+                'shatter': {
+                    '0%': { opacity: '1', transform: 'scale(1)' },
+                    '100%': { opacity: '0', transform: 'scale(0.5) rotate(10deg)' }
                 }
             },
             animation: {
@@ -62,6 +66,7 @@ export default {
                 'shake': 'shake 0.5s cubic-bezier(.36,.07,.19,.97) both',
                 'pop-in': 'pop-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
                 'flash': 'flash 0.5s ease-out',
+                'shatter': 'shatter 0.3s ease-out forwards',
             },
             boxShadow: {
                 'glow-cyan': '0 0 20px theme("colors.cyan.400"), 0 0 40px theme("colors.cyan.500")',

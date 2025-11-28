@@ -56,6 +56,7 @@ function App() {
     const [searchStartTime, setSearchStartTime] = useState(null);
     const [oppDisconnectTime, setOppDisconnectTime] = useState(null);
     const [showDisconnectWarning, setShowDisconnectWarning] = useState(false);
+    const [showEndScreen, setShowEndScreen] = useState(false);
     const playerSlotRef = useRef(null);
 
     // --- Helper Logic ---
@@ -799,6 +800,18 @@ function App() {
         }
     }, [gameData, playerId]);
 
+    // Delay EndScreen to allow win animation to complete
+    useEffect(() => {
+        if (gameData?.status === GAME_STATUS.END && !showEndScreen) {
+            const timer = setTimeout(() => {
+                setShowEndScreen(true);
+            }, 2500); // Wait for animation (shake 500ms + shatter 300ms + overflow 700ms + buffer 1000ms)
+            return () => clearTimeout(timer);
+        } else if (gameData?.status !== GAME_STATUS.END) {
+            setShowEndScreen(false);
+        }
+    }, [gameData?.status, showEndScreen]);
+
     const resolveRound = () => {
         if (!gameData) return;
 
@@ -1455,6 +1468,7 @@ function App() {
                                 prizeGraveyard={gameData.prizeGraveyard}
                                 status={gameData.status}
                                 currentPrize={gameData.currentPrize}
+                                winner={gameData.status === GAME_STATUS.END ? (myData.score > oppData.score ? 'player' : myData.score < oppData.score ? 'cpu' : null) : null}
                             />
                         </div>
 
@@ -1579,7 +1593,7 @@ function App() {
             )}
 
             {/* End Screen */}
-            {gameData.status === GAME_STATUS.END && (
+            {showEndScreen && gameData.status === GAME_STATUS.END && (
                 <EndScreen
                     myData={myData}
                     oppData={oppData}
