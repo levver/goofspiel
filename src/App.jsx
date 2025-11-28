@@ -859,6 +859,11 @@ function App() {
         const newHostTime = Math.max(0, (gameData.host.time || 600) - hostDuration);
         const newGuestTime = Math.max(0, (gameData.guest.time || 600) - guestDuration);
 
+        // Move bids to graveyard immediately (visual update)
+        const newHostGraveyard = [...(gameData.host.graveyard || []), hostBid];
+        const newGuestGraveyard = [...(gameData.guest.graveyard || []), guestBid];
+        const newPrizeGraveyard = [...(gameData.prizeGraveyard || []), prize];
+
         // Update DB with results
         const updates = {};
         updates[`games/${gameId}/status`] = GAME_STATUS.RESOLVING;
@@ -867,6 +872,9 @@ function App() {
         updates[`games/${gameId}/host/time`] = newHostTime;
         updates[`games/${gameId}/guest/time`] = newGuestTime;
         updates[`games/${gameId}/log`] = { msg, type }; // Shared log
+        updates[`games/${gameId}/host/graveyard`] = newHostGraveyard;
+        updates[`games/${gameId}/guest/graveyard`] = newGuestGraveyard;
+        updates[`games/${gameId}/prizeGraveyard`] = newPrizeGraveyard;
 
         console.log('[RESOLVE] Sending immediate updates', updates);
         update(ref(db), updates);
@@ -877,16 +885,9 @@ function App() {
             console.log('[RESOLVE] Timer finished, preparing next round updates');
             const nextUpdates = {};
 
-            // Move bids to graveyard
-            const newHostGraveyard = [...(gameData.host.graveyard || []), hostBid];
-            const newGuestGraveyard = [...(gameData.guest.graveyard || []), guestBid];
-            const newPrizeGraveyard = [...(gameData.prizeGraveyard || []), prize];
-
+            // Clear bids
             nextUpdates[`games/${gameId}/host/bid`] = null;
             nextUpdates[`games/${gameId}/guest/bid`] = null;
-            nextUpdates[`games/${gameId}/host/graveyard`] = newHostGraveyard;
-            nextUpdates[`games/${gameId}/guest/graveyard`] = newGuestGraveyard;
-            nextUpdates[`games/${gameId}/prizeGraveyard`] = newPrizeGraveyard;
 
             // Next Prize
             if ((gameData.prizeDeck && gameData.prizeDeck.length > 0) && !hostHasWon && !guestHasWon) {
