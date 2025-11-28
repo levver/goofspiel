@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield } from './Icons';
+import { Pyramid } from './Icons';
 import { THEME, RANK_LABELS } from '../utils/constants';
 
 const DataChip = ({
@@ -28,7 +28,7 @@ const DataChip = ({
                 style={style}
             >
                 <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.05)_50%,transparent_75%,transparent_100%)] bg-[length:20px_20px] opacity-20"></div>
-                <Shield className="w-6 h-6 text-slate-600 animate-pulse" />
+                <Pyramid className="w-6 h-6 text-slate-600 animate-pulse" />
             </div>
         );
     }

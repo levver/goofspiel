@@ -18,8 +18,12 @@ import {
     TIE_ANIMATION_DURATION,
     CARD_FLIGHT_DURATION,
     PRIZE_ANIMATION_DELAY,
+    PRIZE_ANIMATION_DURATION,
     PRIZE_ANIMATION_CLEANUP,
-    PROGRESS_BAR_UPDATE_DELAY
+    GAME_STATUS,
+    ROLES,
+    MESSAGES,
+    UI_TEXT
 } from './utils/constants';
 import { shuffle } from './utils/helpers';
 import { db } from './utils/firebaseConfig';
@@ -34,7 +38,7 @@ import { setupPresence, sendHeartbeat, cleanupPresence } from './utils/presence'
 function App() {
     // --- Firebase State ---
     const [gameId, setGameId] = useState(null);
-    const [playerId, setPlayerId] = useState(null); // 'host' or 'guest'
+    const [playerId, setPlayerId] = useState(null); // ROLES.HOST or ROLES.GUEST
     const [gameData, setGameData] = useState(null);
     const [hostProfile, setHostProfile] = useState(null);
     const [guestProfile, setGuestProfile] = useState(null);
@@ -42,7 +46,7 @@ function App() {
     const [authLoading, setAuthLoading] = useState(true);
 
     // --- Local UI State ---
-    const [log, setLog] = useState({ msg: "SYSTEM READY", type: 'neutral' });
+    const [log, setLog] = useState({ msg: MESSAGES.SYSTEM_READY, type: 'neutral' });
     const [animatingCard, setAnimatingCard] = useState(null);
     const [animationProps, setAnimationProps] = useState(null);
     const [localTime, setLocalTime] = useState(INITIAL_TIME);
@@ -59,13 +63,13 @@ function App() {
         if (!gameData) return false;
 
         // If game is already ended or abandoned, it's not active
-        if (gameData.status === 'END' || gameData.status === 'ABANDONED') {
+        if (gameData.status === GAME_STATUS.END || gameData.status === GAME_STATUS.ABANDONED) {
             return false;
         }
 
         // Only check for abandonment in PLAYING games
         // WAITING games haven't started yet, so one player being missing is expected
-        if (gameData.status !== 'PLAYING' && gameData.status !== 'RESOLVING') {
+        if (gameData.status !== GAME_STATUS.PLAYING && gameData.status !== GAME_STATUS.RESOLVING) {
             return true;
         }
 
@@ -100,7 +104,7 @@ function App() {
 
                 // Mark as abandoned
                 await update(ref(db, `games/${gameId}`), {
-                    status: 'ABANDONED'
+                    status: GAME_STATUS.ABANDONED
                 });
 
                 return false;
@@ -134,7 +138,7 @@ function App() {
                 get(ref(db, `games/${savedGameId}`)).then(snapshot => {
                     if (snapshot.exists()) {
                         const gameData = snapshot.val();
-                        if (gameData.status === 'PLAYING' || gameData.status === 'WAITING' || gameData.status === 'RESOLVING') {
+                        if (gameData.status === GAME_STATUS.PLAYING || gameData.status === GAME_STATUS.WAITING || gameData.status === GAME_STATUS.RESOLVING) {
                             // Check for abandonment before reconnecting
                             checkAndCleanupGame(savedGameId, gameData).then(isValid => {
                                 if (isValid) {
@@ -180,7 +184,7 @@ function App() {
         const newGameId = generateShortGameId();
 
         const initialGameData = {
-            status: 'WAITING',
+            status: GAME_STATUS.WAITING,
             round: 1,
             prizeDeck: shuffle([...RANKS]),
             currentPrize: null,
@@ -206,12 +210,12 @@ function App() {
 
         set(ref(db, `games/${newGameId}`), initialGameData);
         setGameId(newGameId);
-        setPlayerId('host');
+        setPlayerId(ROLES.HOST);
 
         // Save to localStorage for reconnection
         localStorage.setItem('activeGame', JSON.stringify({
             gameId: newGameId,
-            playerId: 'host',
+            playerId: ROLES.HOST,
             timestamp: Date.now()
         }));
         console.log('[RECONNECT] Saved game to localStorage');
@@ -229,18 +233,18 @@ function App() {
                 // Determine role based on ID in game data
                 // If ID matches host, I am host. If matches guest, I am guest.
                 // If neither (manual join), I am guest and I take the seat.
-                let role = 'guest';
+                let role = ROLES.GUEST;
 
                 if (gameData.host && gameData.host.id === myUserId) {
-                    role = 'host';
+                    role = ROLES.HOST;
                 } else if (gameData.guest && gameData.guest.id === myUserId) {
-                    role = 'guest';
+                    role = ROLES.GUEST;
                 } else {
                     // Manual join - take guest seat
-                    role = 'guest';
+                    role = ROLES.GUEST;
                     // Only update DB if I'm taking the seat for the first time
                     update(gameRef, {
-                        status: 'PLAYING',
+                        status: GAME_STATUS.PLAYING,
                         'guest/id': myUserId,
                         'guest/name': getUserName()
                     });
@@ -275,7 +279,7 @@ function App() {
                 setGameData(data);
 
                 // Game Logic Triggers based on data changes
-                if (data.status === 'RESOLVING' && !data.resolved) {
+                if (data.status === GAME_STATUS.RESOLVING && !data.resolved) {
                     // Trigger resolution animation/logic locally if needed
                     // But actual state update should be done by Host
                 }
@@ -329,7 +333,7 @@ function App() {
 
                             // Join the game
                             setGameId(id);
-                            setPlayerId(game.host?.id === userId ? 'host' : 'guest');
+                            setPlayerId(game.host?.id === userId ? ROLES.HOST : ROLES.GUEST);
                             setIsSearching(false);
                             setSearchStartTime(null);
                         }
@@ -354,10 +358,10 @@ function App() {
 
     // Apply rating updates when game ends
     useEffect(() => {
-        if (!gameData || gameData.status !== 'END' || !gameData.ratingUpdates) return;
+        if (!gameData || gameData.status !== GAME_STATUS.END || !gameData.ratingUpdates) return;
 
         const myUserId = getUserId();
-        const amHost = playerId === 'host'; // Calculate locally to avoid initialization order issues
+        const amHost = playerId === ROLES.HOST; // Calculate locally to avoid initialization order issues
         const myRatingUpdate = amHost ? gameData.ratingUpdates.host : gameData.ratingUpdates.guest;
 
         if (myRatingUpdate && myUserId) {
@@ -371,7 +375,7 @@ function App() {
     }, [gameData?.status, gameData?.ratingUpdates, playerId]);
 
     // Derived State for UI
-    const isHost = playerId === 'host';
+    const isHost = playerId === ROLES.HOST;
     const myData = (gameData && (isHost ? gameData.host : gameData.guest)) || {};
     const oppData = (gameData && (isHost ? gameData.guest : gameData.host)) || {};
 
@@ -381,7 +385,7 @@ function App() {
 
     // Opponent Card Landing Effect - only show when both players have played
     useEffect(() => {
-        if (oppBid && gameData?.status === 'RESOLVING') {
+        if (oppBid && gameData?.status === GAME_STATUS.RESOLVING) {
             setOppCardLanded(true);
             const timer = setTimeout(() => setOppCardLanded(false), CARD_LANDING_FLASH_DURATION);
             return () => clearTimeout(timer);
@@ -399,7 +403,7 @@ function App() {
     // Timer Tick Logic
     useEffect(() => {
         let interval = null;
-        if (gameData?.status === 'PLAYING') {
+        if (gameData?.status === GAME_STATUS.PLAYING) {
             interval = setInterval(() => {
                 if (!myData?.bid && localTime > 0) {
                     setLocalTime(t => Math.max(0, t - 1));
@@ -414,7 +418,7 @@ function App() {
 
     // Monitor Opponent Disconnect
     useEffect(() => {
-        if (!gameData || gameData.status !== 'PLAYING' || !gameData.presence) return;
+        if (!gameData || gameData.status !== GAME_STATUS.PLAYING || !gameData.presence) return;
 
         const oppPresence = isHost ? gameData.presence.guest : gameData.presence.host;
 
@@ -449,14 +453,14 @@ function App() {
 
     // Monitor Rematch State
     useEffect(() => {
-        if (!gameData || gameData.status !== 'END') return;
+        if (!gameData || gameData.status !== GAME_STATUS.END) return;
 
         const rematch = gameData.rematch;
         if (!rematch) return;
 
         // Check if opponent requested
-        const oppRequested = playerId === 'host' ? rematch.guestRequest : rematch.hostRequest;
-        const myRequest = playerId === 'host' ? rematch.hostRequest : rematch.guestRequest;
+        const oppRequested = playerId === ROLES.HOST ? rematch.guestRequest : rematch.hostRequest;
+        const myRequest = playerId === ROLES.HOST ? rematch.hostRequest : rematch.guestRequest;
 
         if (oppRequested && !myRequest && rematchStatus !== 'opponent-requested') {
             setRematchStatus('opponent-requested');
@@ -466,7 +470,7 @@ function App() {
         if (rematch.accepted && rematchStatus !== 'accepted' && !rematch.newGameId) {
             setRematchStatus('accepted');
             // Only host creates the game
-            if (playerId === 'host') {
+            if (playerId === ROLES.HOST) {
                 handleRematchAccepted();
             }
         }
@@ -506,10 +510,10 @@ function App() {
     // Monitor for timeouts
     useEffect(() => {
         if (!gameData || !gameId || !playerId) return;
-        if (gameData.status !== 'PLAYING') return;
+        if (gameData.status !== GAME_STATUS.PLAYING) return;
 
-        const myData = playerId === 'host' ? gameData.host : gameData.guest;
-        const oppData = playerId === 'host' ? gameData.guest : gameData.host;
+        const myData = playerId === ROLES.HOST ? gameData.host : gameData.guest;
+        const oppData = playerId === ROLES.HOST ? gameData.guest : gameData.host;
 
         // Check if either player timed out
         if (localTime <= 0 || oppLocalTime <= 0) {
@@ -517,7 +521,7 @@ function App() {
             const oppTimedOut = oppLocalTime <= 0;
 
             // Only host processes the timeout
-            if (playerId === 'host') {
+            if (playerId === ROLES.HOST) {
                 const hostTimedOut = isHost ? iTimedOut : oppTimedOut;
                 const guestTimedOut = isHost ? oppTimedOut : iTimedOut;
 
@@ -535,15 +539,15 @@ function App() {
                     guestScore = gameData.guest.score;
                 }
 
-                console.log('[TIMEOUT] Player timed out:', hostTimedOut ? 'host' : 'guest');
+                console.log('[TIMEOUT] Player timed out:', hostTimedOut ? ROLES.HOST : ROLES.GUEST);
 
                 // End the game
                 const updates = {};
-                updates[`games/${gameId}/status`] = 'END';
+                updates[`games/${gameId}/status`] = GAME_STATUS.END;
                 updates[`games/${gameId}/host/score`] = hostScore;
                 updates[`games/${gameId}/guest/score`] = guestScore;
                 updates[`games/${gameId}/log`] = {
-                    msg: hostTimedOut ? 'HOST TIMED OUT' : 'GUEST TIMED OUT',
+                    msg: hostTimedOut ? MESSAGES.HOST_TIMED_OUT : MESSAGES.GUEST_TIMED_OUT,
                     type: 'danger'
                 };
 
@@ -578,7 +582,7 @@ function App() {
             prevLogRef.current = { msg: currentLog.msg, type: currentLog.type };
 
             // If it's a win message
-            if (currentLog.msg && currentLog.msg.includes('WON') && (currentLog.type === 'host' || currentLog.type === 'guest')) {
+            if (currentLog.msg && currentLog.msg.includes(MESSAGES.WON) && (currentLog.type === ROLES.HOST || currentLog.type === ROLES.GUEST)) {
                 // Determine if I won
                 const iWon = currentLog.type === playerId;
 
@@ -594,7 +598,33 @@ function App() {
                         const startRect = prizeSlotRef.current.getBoundingClientRect();
                         const endRect = progressBarRef.current.getBoundingClientRect();
 
+                        // Calculate current edge of progress bar based on scores
+                        const totalAvailablePoints = 91 - (gameData.prizeGraveyard || []).reduce((a, b) => a + b, 0) + myData.score + oppData.score;
+                        const myPercentage = totalAvailablePoints > 0 ? (myData.score / totalAvailablePoints) * 100 : 0;
+                        const oppPercentage = totalAvailablePoints > 0 ? (oppData.score / totalAvailablePoints) * 100 : 0;
+
+                        // Target width is 10% of progress bar total width
+                        const targetWidth = endRect.width * 0.1;
+
+                        // Calculate target position (edge of winner's current progress)
+                        let targetX;
+                        if (iWon) {
+                            // Position at my current edge
+                            targetX = endRect.left + (endRect.width * (myPercentage / 100));
+                        } else {
+                            // Position at opponent's current edge
+                            targetX = endRect.right - (endRect.width * (oppPercentage / 100)) - targetWidth;
+                        }
+
+                        const targetY = endRect.top + (endRect.height / 2) - (startRect.height / 2);
+
+                        // Winner's color filter (cyan for player, fuchsia for opponent)
+                        const winnerColorFilter = iWon
+                            ? 'hue-rotate(180deg) saturate(1.5) brightness(1.2)' // Cyan-ish
+                            : 'hue-rotate(270deg) saturate(1.5) brightness(1.2)'; // Fuchsia-ish
+
                         setAnimatingPrize(prizeRank);
+                        setAnimatingPrizeWinner(iWon ? 'player' : 'cpu'); // Store winner type
                         setPrizeAnimationProps({
                             position: 'fixed',
                             top: startRect.top,
@@ -604,27 +634,23 @@ function App() {
                             zIndex: 100,
                             transition: 'none',
                             transform: 'scale(1)',
-                            opacity: 1
+                            opacity: 1,
+                            filter: winnerColorFilter // Apply color instantly
                         });
 
                         requestAnimationFrame(() => {
-                            const targetX = iWon
-                                ? endRect.left + (endRect.width * 0.25) // 25% from left
-                                : endRect.left + (endRect.width * 0.75); // 75% from left (25% from right)
-
-                            const targetY = endRect.top + (endRect.height / 2) - (startRect.height / 2);
-
                             requestAnimationFrame(() => {
                                 setPrizeAnimationProps({
                                     position: 'fixed',
                                     top: targetY,
-                                    left: targetX - (startRect.width / 2),
-                                    width: startRect.width,
-                                    height: startRect.height,
+                                    left: targetX,
+                                    width: targetWidth, // 10% of progress bar width
+                                    height: endRect.height, // Match progress bar height
                                     zIndex: 100,
-                                    transition: 'all 2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                                    transform: 'scale(0.2)',
-                                    opacity: 0
+                                    transition: `all ${PRIZE_ANIMATION_DURATION}ms cubic-bezier(0.34, 1.56, 0.64, 1)`,
+                                    transform: 'scale(1)',
+                                    opacity: 0.8,
+                                    filter: winnerColorFilter // Keep same color
                                 });
                             });
                         });
@@ -632,6 +658,7 @@ function App() {
                         // Cleanup after animation completes
                         setTimeout(() => {
                             setAnimatingPrize(null);
+                            setAnimatingPrizeWinner(null);
                             setPrizeAnimationProps(null);
                         }, PRIZE_ANIMATION_CLEANUP);
                     }, PRIZE_ANIMATION_DELAY);
@@ -649,6 +676,7 @@ function App() {
     const prizeSlotRef = useRef(null);
     const progressBarRef = useRef(null);
     const [animatingPrize, setAnimatingPrize] = useState(null);
+    const [animatingPrizeWinner, setAnimatingPrizeWinner] = useState(null);
     const [prizeAnimationProps, setPrizeAnimationProps] = useState(null);
     const prevLogRef = useRef(null);
 
@@ -760,16 +788,16 @@ function App() {
 
     // Host Logic for Resolution
     useEffect(() => {
-        if (playerId !== 'host' || !gameData) return;
+        if (playerId !== ROLES.HOST || !gameData) return;
 
-        if (gameData.status === 'PLAYING' && gameData.host.bid && gameData.guest.bid) {
+        if (gameData.status === GAME_STATUS.PLAYING && gameData.host.bid && gameData.guest.bid) {
             // Both players have bid, trigger resolution
             resolveRound();
         }
 
         // Check for game end (e.g. forfeit) to trigger rating updates
         // If status is END but no ratingUpdates exist yet, calculate them
-        if (gameData.status === 'END' && !gameData.ratingUpdates) {
+        if (gameData.status === GAME_STATUS.END && !gameData.ratingUpdates) {
             console.log('[HOST] Game ended, calculating ratings...');
             handleGameEnd(gameData.host.score, gameData.guest.score);
         }
@@ -784,7 +812,7 @@ function App() {
 
         let hostScore = gameData.host.score;
         let guestScore = gameData.guest.score;
-        let msg = "TIED (0)";
+        let msg = MESSAGES.TIED;
         let type = "warning";
 
         if (hostBid === guestBid) {
@@ -794,12 +822,12 @@ function App() {
 
         if (hostBid > guestBid) {
             hostScore += prize;
-            msg = `WON ${prize}`;
-            type = "host";
+            msg = `${MESSAGES.WON} ${prize}`;
+            type = ROLES.HOST;
         } else if (guestBid > hostBid) {
             guestScore += prize;
-            msg = `WON ${prize}`;
-            type = "guest";
+            msg = `${MESSAGES.WON} ${prize}`;
+            type = ROLES.GUEST;
         }
 
         // Check for early win (insurmountable lead)
@@ -825,7 +853,7 @@ function App() {
 
         // Update DB with results
         const updates = {};
-        updates[`games/${gameId}/status`] = 'RESOLVING';
+        updates[`games/${gameId}/status`] = GAME_STATUS.RESOLVING;
         updates[`games/${gameId}/host/score`] = hostScore;
         updates[`games/${gameId}/guest/score`] = guestScore;
         updates[`games/${gameId}/host/time`] = newHostTime;
@@ -853,19 +881,19 @@ function App() {
             if ((gameData.prizeDeck && gameData.prizeDeck.length > 0) && !hostHasWon && !guestHasWon) {
                 nextUpdates[`games/${gameId}/currentPrize`] = gameData.prizeDeck[0];
                 nextUpdates[`games/${gameId}/prizeDeck`] = gameData.prizeDeck.slice(1);
-                nextUpdates[`games/${gameId}/status`] = 'PLAYING';
+                nextUpdates[`games/${gameId}/status`] = GAME_STATUS.PLAYING;
                 nextUpdates[`games/${gameId}/round`] = gameData.round + 1;
                 nextUpdates[`games/${gameId}/roundStart`] = serverTimestamp();
             } else {
                 // Game ends (either no more cards or early win)
-                nextUpdates[`games/${gameId}/status`] = 'END';
+                nextUpdates[`games/${gameId}/status`] = GAME_STATUS.END;
                 nextUpdates[`games/${gameId}/currentPrize`] = null;
 
                 // Set log message for early win
                 if (hostHasWon || guestHasWon) {
                     nextUpdates[`games/${gameId}/log`] = {
-                        msg: hostHasWon ? 'HOST WINS (INSURMOUNTABLE LEAD)' : 'GUEST WINS (INSURMOUNTABLE LEAD)',
-                        type: hostHasWon ? 'host' : 'guest'
+                        msg: hostHasWon ? MESSAGES.HOST_WINS_LEAD : MESSAGES.GUEST_WINS_LEAD,
+                        type: hostHasWon ? ROLES.HOST : ROLES.GUEST
                     };
                 }
 
@@ -878,12 +906,12 @@ function App() {
     };
 
     const handleOpponentDisconnect = async () => {
-        if (playerId !== 'host') return; // Only host ends the game
+        if (playerId !== ROLES.HOST) return; // Only host ends the game
 
         console.log('[DISCONNECT] Ending game due to opponent disconnect');
 
         const updates = {};
-        updates[`games/${gameId}/status`] = 'END';
+        updates[`games/${gameId}/status`] = GAME_STATUS.END;
 
         // Award victory to connected player (me), loss to disconnected player
         const myScore = 999;
@@ -909,7 +937,7 @@ function App() {
     };
 
     const handleGameEnd = async (hostScore, guestScore) => {
-        if (playerId !== 'host') return;
+        if (playerId !== ROLES.HOST) return;
 
         const hostId = gameData.host.id;
         const guestId = gameData.guest.id;
@@ -954,7 +982,7 @@ function App() {
         updates[`games/${gameId}/rematch/${playerId}Request`] = true;
 
         // Check if opponent already requested
-        const oppRequested = playerId === 'host' ? gameData.rematch?.guestRequest : gameData.rematch?.hostRequest;
+        const oppRequested = playerId === ROLES.HOST ? gameData.rematch?.guestRequest : gameData.rematch?.hostRequest;
         if (oppRequested) {
             updates[`games/${gameId}/rematch/accepted`] = true;
         }
@@ -987,7 +1015,7 @@ function App() {
     };
 
     const handleRematchAccepted = async () => {
-        if (playerId !== 'host' || !gameData) return; // Only host creates the new game
+        if (playerId !== ROLES.HOST || !gameData) return; // Only host creates the new game
 
         console.log('[REMATCH] Creating new game for rematch...');
 
@@ -996,7 +1024,7 @@ function App() {
 
         const prizeDeck = shuffle([...RANKS]);
         const newGameData = {
-            status: 'PLAYING',
+            status: GAME_STATUS.PLAYING,
             round: 1,
             prizeDeck: prizeDeck.slice(1),
             currentPrize: prizeDeck[0],
@@ -1019,7 +1047,7 @@ function App() {
                 name: gameData.guest.name
             },
             prizeGraveyard: [],
-            log: { msg: `ROUND 1`, type: 'neutral' },
+            log: { msg: `${MESSAGES.ROUND_PREFIX}1`, type: 'neutral' },
             lastAction: Date.now(),
             roundStart: serverTimestamp(),
             rematch: {
@@ -1056,10 +1084,10 @@ function App() {
         if (!gameId || !playerId || !gameData) return;
 
         // Only allow forfeit during active gameplay
-        if (gameData.status !== 'PLAYING' && gameData.status !== 'RESOLVING') return;
+        if (gameData.status !== GAME_STATUS.PLAYING && gameData.status !== GAME_STATUS.RESOLVING) return;
 
         // Confirm forfeit
-        const confirmed = window.confirm('Are you sure you want to forfeit? This will end the game and you will lose.');
+        const confirmed = window.confirm(UI_TEXT.FORFEIT_CONFIRM);
         if (!confirmed) return;
 
         console.log('[FORFEIT] Player forfeiting:', playerId);
@@ -1069,7 +1097,7 @@ function App() {
         const oppScore = 999;
 
         const updates = {};
-        updates[`games/${gameId}/status`] = 'END';
+        updates[`games/${gameId}/status`] = GAME_STATUS.END;
 
         if (isHost) {
             updates[`games/${gameId}/host/score`] = myScore;
@@ -1145,7 +1173,7 @@ function App() {
 
         const prizeDeck = shuffle([...RANKS]);
         const initialGameData = {
-            status: 'PLAYING',
+            status: GAME_STATUS.PLAYING,
             round: 1,
             prizeDeck: prizeDeck.slice(1),
             currentPrize: prizeDeck[0],
@@ -1184,7 +1212,7 @@ function App() {
                 name: getUserName()
             },
             prizeGraveyard: [],
-            log: { msg: `ROUND 1`, type: 'neutral' },
+            log: { msg: `${MESSAGES.ROUND_PREFIX}1`, type: 'neutral' },
             lastAction: Date.now(),
             roundStart: serverTimestamp(),
             rematch: {
@@ -1218,7 +1246,7 @@ function App() {
 
         // Join the game locally
         setGameId(newGameId);
-        setPlayerId(iAmHost ? 'host' : 'guest');
+        setPlayerId(iAmHost ? ROLES.HOST : ROLES.GUEST);
         setIsSearching(false);
         setIsMatching(false); // Reset matching state
         setSearchStartTime(null);
@@ -1226,7 +1254,7 @@ function App() {
         // Save to localStorage for reconnection
         localStorage.setItem('activeGame', JSON.stringify({
             gameId: newGameId,
-            playerId: iAmHost ? 'host' : 'guest',
+            playerId: iAmHost ? ROLES.HOST : ROLES.GUEST,
             timestamp: Date.now()
         }));
         console.log('[RECONNECT] Saved matched game to localStorage');
@@ -1241,7 +1269,7 @@ function App() {
     };
 
     const handleCardClick = (rank, e) => {
-        if (!gameData || gameData.status !== 'PLAYING' || animatingCard) return;
+        if (!gameData || gameData.status !== GAME_STATUS.PLAYING || animatingCard) return;
 
         // Check if already bid
         const myData = playerId === 'host' ? gameData.host : gameData.guest;
@@ -1285,7 +1313,7 @@ function App() {
             updates[`games/${gameId}/${playerId}/bid`] = rank;
 
             // Remove from hand
-            const currentHand = playerId === 'host' ? gameData.host.hand : gameData.guest.hand;
+            const currentHand = playerId === ROLES.HOST ? gameData.host.hand : gameData.guest.hand;
             const newHand = currentHand.filter(c => c !== rank);
             updates[`games/${gameId}/${playerId}/hand`] = newHand;
 
@@ -1307,7 +1335,7 @@ function App() {
     // --- Render Helpers ---
 
     if (authLoading) {
-        return <div className="fixed inset-0 bg-[#0a0e17] flex items-center justify-center text-cyan-500 font-mono animate-pulse">AUTHENTICATING...</div>;
+        return <div className="fixed inset-0 bg-[#0a0e17] flex items-center justify-center text-cyan-500 font-mono animate-pulse">{UI_TEXT.AUTHENTICATING}</div>;
     }
 
     if (!currentUser) {
@@ -1327,11 +1355,11 @@ function App() {
     }
 
     if (!gameData) {
-        return <div className="fixed inset-0 bg-[#0a0e17] flex items-center justify-center text-cyan-500 font-mono animate-pulse">CONNECTING TO NEURAL NET...</div>;
+        return <div className="fixed inset-0 bg-[#0a0e17] flex items-center justify-center text-cyan-500 font-mono animate-pulse">{UI_TEXT.CONNECTING}</div>;
     }
 
-    if (gameData.status === 'WAITING') {
-        return <WaitingScreen gameId={gameId} onCancel={playerId === 'host' ? handleCancelWaiting : null} />;
+    if (gameData.status === GAME_STATUS.WAITING) {
+        return <WaitingScreen gameId={gameId} onCancel={playerId === ROLES.HOST ? handleCancelWaiting : null} />;
     }
 
 
@@ -1342,9 +1370,9 @@ function App() {
 
     // Show bids only if resolving or if it's my bid
     const showMyBid = !!myBid;
-    const showOppBid = gameData.status === 'RESOLVING' || gameData.status === 'END'; // Only show opp bid when resolving
+    const showOppBid = gameData.status === GAME_STATUS.RESOLVING || gameData.status === GAME_STATUS.END; // Only show opp bid when resolving
 
-    const currentLog = gameData.log || { msg: `ROUND ${gameData.round}`, type: 'neutral' };
+    const currentLog = gameData.log || { msg: `${MESSAGES.ROUND_PREFIX}${gameData.round}`, type: 'neutral' };
 
     const getCardStyle = (index, total) => {
         const isMobile = window.innerWidth < 640;
@@ -1386,7 +1414,7 @@ function App() {
                 {/* Opponent Bar */}
                 <div className="px-4 py-2 flex justify-end items-end border-b border-slate-800/30">
                     <StatBlock
-                        label={oppData.name || 'OPPONENT'}
+                        label={oppData.name || UI_TEXT.OPPONENT_DEFAULT_NAME}
                         value={oppData.score}
                         time={oppLocalTime}
                         color="text-fuchsia-500"
@@ -1426,7 +1454,7 @@ function App() {
                                     ref={playerSlotRef}
                                     className={`relative w-24 h-32 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30 ${myCardLanded ? 'animate-flash shadow-glow-cyan' : ''}`}
                                 >
-                                    <span className="text-[8px] font-mono text-cyan-500/50 absolute -top-3">YOU</span>
+                                    <span className="text-[8px] font-mono text-cyan-500/50 absolute -top-3">{UI_TEXT.YOU}</span>
                                     {myBid && !animatingCard && (
                                         <div className="animate-in fade-in zoom-in duration-300">
                                             <DataChip rank={myBid} type="player" compact={true} />
@@ -1448,7 +1476,7 @@ function App() {
 
                                 {/* Opponent Slot (Right) */}
                                 <div className={`relative w-24 h-32 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30 ${oppCardLanded ? 'animate-flash shadow-glow-purple' : ''}`}>
-                                    <span className="text-[8px] font-mono text-fuchsia-500/50 absolute -top-3">OPP</span>
+                                    <span className="text-[8px] font-mono text-fuchsia-500/50 absolute -top-3">{UI_TEXT.OPP}</span>
                                     {oppBid ? (
                                         <div className={`transition-all duration-500 ${showOppBid ? 'animate-flip-in' : ''}`}>
                                             <DataChip
@@ -1477,7 +1505,7 @@ function App() {
                 {/* Player Stats */}
                 <div className="px-4 py-2 flex justify-between items-start border-t border-slate-800/30 bg-slate-900/20">
                     <StatBlock
-                        label="YOU"
+                        label={UI_TEXT.YOU}
                         value={myData.score}
                         time={localTime}
                         color="text-cyan-400"
@@ -1497,7 +1525,7 @@ function App() {
 
                             const baseStyle = getCardStyle(index, myData.hand.length);
                             const style = isAnimating && animationProps ? animationProps : baseStyle;
-                            const isInteractionDisabled = gameData.status !== 'PLAYING' || (animatingCard && !isAnimating) || !!myBid;
+                            const isInteractionDisabled = gameData.status !== GAME_STATUS.PLAYING || (animatingCard && !isAnimating) || !!myBid;
 
                             return (
                                 <div
@@ -1523,7 +1551,7 @@ function App() {
             </div>
 
             {/* Disconnect Warning Banner */}
-            {gameData.status === 'PLAYING' && showDisconnectWarning && oppDisconnectTime && (
+            {gameData.status === GAME_STATUS.PLAYING && showDisconnectWarning && oppDisconnectTime && (
                 <DisconnectWarning oppDisconnectTime={oppDisconnectTime} />
             )}
 
@@ -1531,13 +1559,13 @@ function App() {
             {tieAnimation && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
                     <div className="text-6xl font-black text-yellow-400 tracking-tighter animate-shake drop-shadow-[0_0_15px_rgba(255,255,0,0.8)]">
-                        TIE
+                        {UI_TEXT.TIE}
                     </div>
                 </div>
             )}
 
             {/* End Screen */}
-            {gameData.status === 'END' && (
+            {gameData.status === GAME_STATUS.END && (
                 <EndScreen
                     myData={myData}
                     oppData={oppData}
@@ -1549,13 +1577,25 @@ function App() {
             {/* Animating Prize Card */}
             {animatingPrize && prizeAnimationProps && (
                 <div
-                    className="fixed pointer-events-none"
+                    className="fixed pointer-events-none overflow-hidden rounded-xl"
                     style={{
-                        ...prizeAnimationProps,
-                        zIndex: 100
+                        position: prizeAnimationProps.position,
+                        top: prizeAnimationProps.top,
+                        left: prizeAnimationProps.left,
+                        width: prizeAnimationProps.width,
+                        height: prizeAnimationProps.height,
+                        zIndex: prizeAnimationProps.zIndex,
+                        transition: prizeAnimationProps.transition,
+                        transform: prizeAnimationProps.transform,
+                        opacity: prizeAnimationProps.opacity
                     }}
                 >
-                    <DataChip rank={animatingPrize} type="prize" highlight={true} />
+                    <DataChip
+                        rank={animatingPrize}
+                        type={animatingPrizeWinner || 'prize'}
+                        highlight={true}
+                        style={{ filter: prizeAnimationProps.filter, width: '100%', height: '100%' }}
+                    />
                 </div>
             )}
         </div>
