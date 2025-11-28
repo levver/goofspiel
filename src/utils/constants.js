@@ -1,12 +1,12 @@
 import { Cpu, Hexagon, Database } from '../components/Icons';
 
 export const RANKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-export const RESOLVE_ROUND_TIMER = 2000; // milliseconds
+export const RESOLVE_ROUND_TIMER = 1000; // milliseconds
 export const INITIAL_TIME = 300; // seconds (5 minutes)
 
 // Animation Timing Constants (milliseconds)
 export const CARD_LANDING_FLASH_DURATION = 600;
-export const TIE_ANIMATION_DURATION = 1000;
+export const TIE_ANIMATION_DURATION = 1500;
 export const CARD_FLIGHT_DURATION = 300;
 export const PRIZE_ANIMATION_DELAY = 500;
 export const PRIZE_ANIMATION_DURATION = 1000; // CSS transition duration in ms

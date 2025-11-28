@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { PROGRESS_BAR_UPDATE_DELAY } from '../utils/constants';
 
-const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize, winner }) => {
+const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize, winner, tie }) => {
     const [displayScores, setDisplayScores] = useState({ my: myScore, opp: oppScore, graveyard: prizeGraveyard });
     const [animationPhase, setAnimationPhase] = useState(null); // null, 'shake', 'shatter', 'overflow'
+    const [tieShatter, setTieShatter] = useState(false);
 
     useEffect(() => {
         if (status === 'RESOLVING') {
@@ -45,6 +46,17 @@ const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize, 
             }, 500); // Shake duration
         }
     }, [winner, animationPhase]);
+
+    // Tie shatter animation
+    useEffect(() => {
+        if (tie) {
+            setTieShatter(true);
+            const timer = setTimeout(() => {
+                setTieShatter(false);
+            }, 1500); // TIE_ANIMATION_DURATION
+            return () => clearTimeout(timer);
+        }
+    }, [tie]);
 
     // Total available points = 91 - (points already won by both players)
     const totalAvailablePoints = 91 - (displayScores.graveyard || []).reduce((a, b) => a + b, 0) + displayScores.my + displayScores.opp;
@@ -100,7 +112,7 @@ const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize, 
                     </div>
                 )}
 
-                {/* Shattering separator */}
+                {/* Shattering separator for win */}
                 {animationPhase === 'shatter' && (
                     <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-[140%] z-20 pointer-events-none flex flex-col animate-shatter">
                         {/* Top Half */}

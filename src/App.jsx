@@ -669,6 +669,17 @@ function App() {
     const [isMatching, setIsMatching] = useState(false);
     const [tieAnimation, setTieAnimation] = useState(false);
 
+    // Sync tie animation from database tie flag
+    useEffect(() => {
+        if (gameData?.tie) {
+            setTieAnimation(true);
+            const timer = setTimeout(() => {
+                setTieAnimation(false);
+            }, TIE_ANIMATION_DURATION);
+            return () => clearTimeout(timer);
+        }
+    }, [gameData?.tie]);
+
     // Prize Animation State
     const prizeSlotRef = useRef(null);
     const progressBarRef = useRef(null);
@@ -831,11 +842,7 @@ function App() {
         let guestScore = gameData.guest.score;
         let msg = MESSAGES.TIED;
         let type = "warning";
-
-        if (hostBid === guestBid) {
-            setTieAnimation(true);
-            setTimeout(() => setTieAnimation(false), TIE_ANIMATION_DURATION);
-        }
+        const isTie = hostBid === guestBid;
 
         if (hostBid > guestBid) {
             hostScore += prize;
@@ -850,7 +857,8 @@ function App() {
         console.log('[RESOLVE] Calculated outcome', {
             winner: type,
             newScores: { host: hostScore, guest: guestScore },
-            msg
+            msg,
+            isTie
         });
 
         // Check for early win (insurmountable lead)
@@ -888,6 +896,7 @@ function App() {
         updates[`games/${gameId}/host/graveyard`] = newHostGraveyard;
         updates[`games/${gameId}/guest/graveyard`] = newGuestGraveyard;
         updates[`games/${gameId}/prizeGraveyard`] = newPrizeGraveyard;
+        updates[`games/${gameId}/tie`] = isTie; // Set tie flag for both players to read
 
         console.log('[RESOLVE] Sending immediate updates', updates);
         update(ref(db), updates);
@@ -901,6 +910,7 @@ function App() {
             // Clear bids
             nextUpdates[`games/${gameId}/host/bid`] = null;
             nextUpdates[`games/${gameId}/guest/bid`] = null;
+            nextUpdates[`games/${gameId}/tie`] = false; // Clear tie flag
 
             // Next Prize
             if ((gameData.prizeDeck && gameData.prizeDeck.length > 0) && !hostHasWon && !guestHasWon) {
@@ -1469,6 +1479,7 @@ function App() {
                                 status={gameData.status}
                                 currentPrize={gameData.currentPrize}
                                 winner={gameData.status === GAME_STATUS.END ? (myData.score > oppData.score ? 'player' : myData.score < oppData.score ? 'cpu' : null) : null}
+                                tie={tieAnimation}
                             />
                         </div>
 
@@ -1494,7 +1505,9 @@ function App() {
                                 <div ref={prizeSlotRef} className="relative z-10 -mt-6">
                                     <div className="absolute -inset-4 bg-yellow-500/10 blur-xl rounded-full animate-pulse"></div>
                                     {gameData.currentPrize ? (
-                                        <DataChip rank={gameData.currentPrize} type="prize" highlight={true} />
+                                        <div className={tieAnimation ? 'animate-shatter' : ''}>
+                                            <DataChip rank={gameData.currentPrize} type="prize" highlight={true} />
+                                        </div>
                                     ) : (
                                         <div className="w-24 h-32 border border-yellow-500/30 rounded-xl flex items-center justify-center">
                                             <Activity className="text-yellow-500 animate-spin" />
