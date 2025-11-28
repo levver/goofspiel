@@ -618,11 +618,6 @@ function App() {
 
                         const targetY = endRect.top + (endRect.height / 2) - (startRect.height / 2);
 
-                        // Winner's color filter (cyan for player, fuchsia for opponent)
-                        const winnerColorFilter = iWon
-                            ? 'hue-rotate(180deg) saturate(1.5) brightness(1.2)' // Cyan-ish
-                            : 'hue-rotate(270deg) saturate(1.5) brightness(1.2)'; // Fuchsia-ish
-
                         setAnimatingPrize(prizeRank);
                         setAnimatingPrizeWinner(iWon ? 'player' : 'cpu'); // Store winner type
                         setPrizeAnimationProps({
@@ -634,23 +629,24 @@ function App() {
                             zIndex: 100,
                             transition: 'none',
                             transform: 'scale(1)',
-                            opacity: 1,
-                            filter: winnerColorFilter // Apply color instantly
+                            opacity: 1
                         });
 
                         requestAnimationFrame(() => {
                             requestAnimationFrame(() => {
+                                // Calculate scale to shrink to progress bar height
+                                const scaleAmount = endRect.height / startRect.height;
+
                                 setPrizeAnimationProps({
                                     position: 'fixed',
                                     top: targetY,
                                     left: targetX,
-                                    width: targetWidth, // 10% of progress bar width
-                                    height: endRect.height, // Match progress bar height
+                                    width: startRect.width,
+                                    height: startRect.height,
                                     zIndex: 100,
                                     transition: `all ${PRIZE_ANIMATION_DURATION}ms cubic-bezier(0.34, 1.56, 0.64, 1)`,
-                                    transform: 'scale(1)',
-                                    opacity: 0.8,
-                                    filter: winnerColorFilter // Keep same color
+                                    transform: `scale(${scaleAmount})`,
+                                    opacity: 0.8
                                 });
                             });
                         });
