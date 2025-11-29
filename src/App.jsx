@@ -467,8 +467,9 @@ function App() {
             setRematchStatus('opponent-requested');
         }
 
-        // Check if both accepted AND newGameId doesn't exist yet (prevent duplicate creation)
-        if (rematch.accepted && rematchStatus !== 'accepted' && !rematch.newGameId) {
+        // Check if both accepted OR both requested (race condition fix)
+        // AND newGameId doesn't exist yet (prevent duplicate creation)
+        if ((rematch.accepted || (rematch.hostRequest && rematch.guestRequest)) && rematchStatus !== 'accepted' && !rematch.newGameId) {
             setRematchStatus('accepted');
             // Only host creates the game
             if (playerId === ROLES.HOST) {
@@ -482,6 +483,18 @@ function App() {
 
             // Clean up presence for old game
             cleanupPresence(gameId, playerId);
+
+            // Reset local state
+            setTieAnimation(false);
+            setShowEndScreen(false);
+            setMyCardLanded(false);
+            setOppCardLanded(false);
+            setAnimatingPrize(null);
+            setAnimatingPrizeWinner(null);
+            setPrizeAnimationProps(null);
+            setAnimatingCard(null);
+            setAnimationProps(null);
+            if (tieTimerRef.current) clearTimeout(tieTimerRef.current);
 
             // Transition to new game
             setGameId(rematch.newGameId);
@@ -1486,6 +1499,7 @@ function App() {
                         {/* Progress Bar */}
                         <div ref={progressBarRef} className="w-full flex justify-center">
                             <ProgressBar
+                                key={gameId}
                                 myScore={myData.score}
                                 oppScore={oppData.score}
                                 prizeGraveyard={gameData.prizeGraveyard}

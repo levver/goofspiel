@@ -102,7 +102,7 @@ const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize, 
                         {/* Top Half (Flows down) */}
                         <div className="w-full h-1/2 bg-[image:linear-gradient(180deg,theme(colors.yellow.400),theme(colors.yellow.200),theme(colors.yellow.400),theme(colors.yellow.200))] bg-[length:100%_200%] animate-ripple-down rounded-t-full shadow-glow-gold" />
                         {/* Bottom Half (Flows up) */}
-                        <div className="w-full h-1/2 -mt-px bg-[image:linear-gradient(180deg,theme(colors.yellow.200),theme(colors.yellow.400),theme(colors.yellow.200),theme(colors.yellow.400))] bg-[length:100%_200%] animate-ripple-up rounded-b-full shadow-glow-gold" />
+                        <div className="w-full h-1/2 -mt-px bg-[image:linear-gradient(180deg,theme(colors.yellow.200),theme(colors.yellow.400),theme(colors.yellow.200),theme(colors.yellow.400))] bg-[length:100%_200%] animate-ripple-up rounded-b-full shadow-glow-gold" style={{ animationDelay: '0.4s' }} />
                     </div>
                 )}
 
