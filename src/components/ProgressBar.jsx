@@ -10,16 +10,10 @@ const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize, 
         if (status === 'RESOLVING') {
             // Delay update during resolution animation
             const timer = setTimeout(() => {
-                // Optimistically add current prize to graveyard to prevent total points fluctuation
-                // because score updates immediately but graveyard updates after delay
-                const optimisticGraveyard = currentPrize
-                    ? [...(prizeGraveyard || []), currentPrize]
-                    : (prizeGraveyard || []);
-
                 setDisplayScores({
                     my: myScore,
                     opp: oppScore,
-                    graveyard: optimisticGraveyard
+                    graveyard: prizeGraveyard
                 });
             }, PROGRESS_BAR_UPDATE_DELAY);
             return () => clearTimeout(timer);

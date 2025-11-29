@@ -668,17 +668,30 @@ function App() {
 
     const [isMatching, setIsMatching] = useState(false);
     const [tieAnimation, setTieAnimation] = useState(false);
+    const tieTimerRef = useRef(null);
 
     // Sync tie animation from database tie flag
     useEffect(() => {
         if (gameData?.tie) {
             setTieAnimation(true);
-            const timer = setTimeout(() => {
+
+            // Clear any existing timer
+            if (tieTimerRef.current) clearTimeout(tieTimerRef.current);
+
+            // Set new timer
+            tieTimerRef.current = setTimeout(() => {
                 setTieAnimation(false);
+                tieTimerRef.current = null;
             }, TIE_ANIMATION_DURATION);
-            return () => clearTimeout(timer);
         }
     }, [gameData?.tie]);
+
+    // Cleanup timer on unmount
+    useEffect(() => {
+        return () => {
+            if (tieTimerRef.current) clearTimeout(tieTimerRef.current);
+        };
+    }, []);
 
     // Prize Animation State
     const prizeSlotRef = useRef(null);
@@ -1522,7 +1535,7 @@ function App() {
                                         <div className="relative w-24 h-32 [perspective:1000px]">
                                             <div className={`w-full h-full transition-transform duration-700 [transform-style:preserve-3d] ${showOppBid ? '[transform:rotateY(180deg)]' : ''}`}>
                                                 {/* Front (Face Down) */}
-                                                <div className="absolute inset-0 [backface-visibility:hidden]">
+                                                <div className="absolute inset-0 [backface-visibility:hidden] flex items-center justify-center">
                                                     <DataChip
                                                         rank={0}
                                                         type="cpu"
@@ -1531,7 +1544,7 @@ function App() {
                                                     />
                                                 </div>
                                                 {/* Back (Face Up) */}
-                                                <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                                                <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] flex items-center justify-center">
                                                     <DataChip
                                                         rank={oppBid}
                                                         type="cpu"
