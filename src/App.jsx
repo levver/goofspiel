@@ -1519,13 +1519,27 @@ function App() {
                                 <div className={`relative w-24 h-32 border border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/30 ${oppCardLanded ? 'animate-flash shadow-glow-purple' : ''}`}>
                                     <span className="text-[8px] font-mono text-fuchsia-500/50 absolute -top-3">{UI_TEXT.OPP}</span>
                                     {oppBid ? (
-                                        <div className={`transition-all duration-500 ${showOppBid ? 'animate-flip-in' : ''}`}>
-                                            <DataChip
-                                                rank={showOppBid ? oppBid : 0} // 0 or null for face down
-                                                type="cpu"
-                                                faceDown={!showOppBid}
-                                                compact={true}
-                                            />
+                                        <div className="relative w-24 h-32 [perspective:1000px]">
+                                            <div className={`w-full h-full transition-transform duration-700 [transform-style:preserve-3d] ${showOppBid ? '[transform:rotateY(180deg)]' : ''}`}>
+                                                {/* Front (Face Down) */}
+                                                <div className="absolute inset-0 [backface-visibility:hidden]">
+                                                    <DataChip
+                                                        rank={0}
+                                                        type="cpu"
+                                                        faceDown={true}
+                                                        compact={true}
+                                                    />
+                                                </div>
+                                                {/* Back (Face Up) */}
+                                                <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                                                    <DataChip
+                                                        rank={oppBid}
+                                                        type="cpu"
+                                                        faceDown={false}
+                                                        compact={true}
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center">

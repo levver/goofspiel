@@ -70,7 +70,7 @@ export default {
             },
             boxShadow: {
                 'glow-cyan': '0 0 20px theme("colors.cyan.400"), 0 0 40px theme("colors.cyan.500")',
-                'glow-cyan-soft': '0 0 10px theme("colors.cyan.400/50"), 0 0 20px theme("colors.cyan.500/30")',
+                'glow-cyan-soft': '0 0 5px theme("colors.cyan.400/30"), 0 0 10px theme("colors.cyan.500/20")',
                 'glow-purple': '0 0 20px theme("colors.fuchsia.400"), 0 0 40px theme("colors.fuchsia.500")',
                 'glow-gold': '0 0 20px theme("colors.yellow.300"), 0 0 40px theme("colors.yellow.400")',
             },
