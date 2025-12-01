@@ -116,3 +116,39 @@ export const WAITING_TEXT = {
     SHARE_CODE: "SHARE THIS CODE",
     CANCEL: "CANCEL"
 };
+
+export const FIREBASE_PATHS = {
+    GAMES: 'games',
+    QUEUE: 'queue',
+    USERS: 'users'
+};
+
+export const LOCAL_STORAGE_KEYS = {
+    ACTIVE_GAME: 'activeGame'
+};
+
+export const REMATCH_STATUS = {
+    WAITING: 'waiting',
+    OPPONENT_REQUESTED: 'opponent-requested',
+    ACCEPTED: 'accepted',
+    LEFT: 'left',
+    DECLINED: 'declined'
+};
+
+export const LOG_TYPES = {
+    NEUTRAL: 'neutral',
+    DANGER: 'danger',
+    WARNING: 'warning',
+    HOST: 'host',
+    GUEST: 'guest'
+};
+
+export const TIMINGS = {
+    RECONNECT_TIMEOUT: 300000, // 5 minutes
+    ABANDONMENT_TIMEOUT: 60000, // 60s
+    DISCONNECT_TIMEOUT: 30000, // 30s
+    HEARTBEAT_INTERVAL: 5000, // 5s
+    REMATCH_RELOAD_DELAY: 3000, // 3s
+    DECLINE_RELOAD_DELAY: 2000, // 2s
+    TIMER_TICK_INTERVAL: 1000 // 1s
+};

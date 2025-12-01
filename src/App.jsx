@@ -23,7 +23,12 @@ import {
     GAME_STATUS,
     ROLES,
     MESSAGES,
-    UI_TEXT
+    UI_TEXT,
+    FIREBASE_PATHS,
+    LOCAL_STORAGE_KEYS,
+    REMATCH_STATUS,
+    LOG_TYPES,
+    TIMINGS
 } from './utils/constants';
 import { shuffle } from './utils/helpers';
 import { db } from './utils/firebaseConfig';
@@ -34,6 +39,7 @@ import { auth } from './utils/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { findBestMatch, isHigherRated } from './utils/matchmaking';
 import { setupPresence, sendHeartbeat, cleanupPresence } from './utils/presence';
+import { generateShortGameId, checkAndCleanupGame } from './utils/gameLogic';
 
 function App() {
     // --- Firebase State ---
@@ -46,74 +52,18 @@ function App() {
     const [authLoading, setAuthLoading] = useState(true);
 
     // --- Local UI State ---
-    const [log, setLog] = useState({ msg: MESSAGES.SYSTEM_READY, type: 'neutral' });
+    const [log, setLog] = useState({ msg: MESSAGES.SYSTEM_READY, type: LOG_TYPES.NEUTRAL });
     const [animatingCard, setAnimatingCard] = useState(null);
     const [animationProps, setAnimationProps] = useState(null);
     const [localTime, setLocalTime] = useState(INITIAL_TIME);
     const [oppLocalTime, setOppLocalTime] = useState(INITIAL_TIME);
-    const [rematchStatus, setRematchStatus] = useState(null); // 'waiting', 'opponent-requested', 'declined', 'left'
+    const [rematchStatus, setRematchStatus] = useState(null); // REMATCH_STATUS.WAITING, REMATCH_STATUS.OPPONENT_REQUESTED, REMATCH_STATUS.DECLINED, REMATCH_STATUS.LEFT
     const [isSearching, setIsSearching] = useState(false);
     const [searchStartTime, setSearchStartTime] = useState(null);
     const [oppDisconnectTime, setOppDisconnectTime] = useState(null);
     const [showDisconnectWarning, setShowDisconnectWarning] = useState(false);
     const [showEndScreen, setShowEndScreen] = useState(false);
     const playerSlotRef = useRef(null);
-
-    // --- Helper Logic ---
-    const checkAndCleanupGame = async (gameId, gameData) => {
-        if (!gameData) return false;
-
-        // If game is already ended or abandoned, it's not active
-        if (gameData.status === GAME_STATUS.END || gameData.status === GAME_STATUS.ABANDONED) {
-            return false;
-        }
-
-        // Only check for abandonment in PLAYING games
-        // WAITING games haven't started yet, so one player being missing is expected
-        if (gameData.status !== GAME_STATUS.PLAYING && gameData.status !== GAME_STATUS.RESOLVING) {
-            return true;
-        }
-
-        // Check for abandonment (both players offline for > 60s)
-        const hostPresence = gameData.presence?.host;
-        const guestPresence = gameData.presence?.guest;
-
-        // If presence data doesn't exist, game was just created, don't mark as abandoned
-        if (!hostPresence || !guestPresence) {
-            return true;
-        }
-
-        const isHostOffline = !hostPresence.online;
-        const isGuestOffline = !guestPresence.online;
-
-        if (isHostOffline && isGuestOffline) {
-            const now = Date.now();
-            const hostLastSeen = hostPresence.lastSeen || hostPresence.disconnectedAt || 0;
-            const guestLastSeen = guestPresence.lastSeen || guestPresence.disconnectedAt || 0;
-
-            // If timestamps are 0 or very small, presence isn't set up yet
-            if (hostLastSeen === 0 || guestLastSeen === 0) {
-                return true;
-            }
-
-            const hostTimeSince = now - hostLastSeen;
-            const guestTimeSince = now - guestLastSeen;
-
-            // If both offline for more than 60 seconds
-            if (hostTimeSince > 60000 && guestTimeSince > 60000) {
-                console.log('[CLEANUP] Game abandoned (both offline > 60s):', gameId);
-
-                // Mark as abandoned
-                await update(ref(db, `games/${gameId}`), {
-                    status: GAME_STATUS.ABANDONED
-                });
-
-                return false;
-            }
-        }
-
-        return true;
-    };
 
     // --- Firebase Auth Logic ---
     useEffect(() => {
@@ -128,15 +78,15 @@ function App() {
     useEffect(() => {
         if (authLoading || !currentUser) return;
 
-        const activeGameData = localStorage.getItem('activeGame');
+        const activeGameData = localStorage.getItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
         if (activeGameData) {
             const { gameId: savedGameId, playerId: savedPlayerId, timestamp } = JSON.parse(activeGameData);
 
             // Check if game is less than 1 hour old
-            if (Date.now() - timestamp < 3600000) {
+            if (Date.now() - timestamp < TIMINGS.RECONNECT_TIMEOUT) {
                 console.log('[RECONNECT] Checking for active game...', savedGameId);
 
-                get(ref(db, `games/${savedGameId}`)).then(snapshot => {
+                get(ref(db, `${FIREBASE_PATHS.GAMES}/${savedGameId}`)).then(snapshot => {
                     if (snapshot.exists()) {
                         const gameData = snapshot.val();
                         if (gameData.status === GAME_STATUS.PLAYING || gameData.status === GAME_STATUS.WAITING || gameData.status === GAME_STATUS.RESOLVING) {
@@ -148,38 +98,28 @@ function App() {
                                     setPlayerId(savedPlayerId);
                                 } else {
                                     console.log('[RECONNECT] Game abandoned or invalid, clearing localStorage');
-                                    localStorage.removeItem('activeGame');
+                                    localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
                                 }
                             });
                         } else {
                             console.log('[RECONNECT] Game ended or invalid status:', gameData.status);
-                            localStorage.removeItem('activeGame');
+                            localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
                         }
                     } else {
                         console.log('[RECONNECT] Game not found, clearing localStorage');
-                        localStorage.removeItem('activeGame');
+                        localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
                     }
                 }).catch(err => {
                     console.error('[RECONNECT] Error checking game:', err);
                 });
             } else {
                 console.log('[RECONNECT] Game too old, clearing localStorage');
-                localStorage.removeItem('activeGame');
+                localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
             }
         }
     }, [authLoading, currentUser]);
 
     // --- Firebase Logic ---
-
-    // Helper function to generate short game IDs (6 characters, alphanumeric)
-    const generateShortGameId = () => {
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excluding ambiguous chars (I, O, 0, 1, L)
-        let id = '';
-        for (let i = 0; i < 6; i++) {
-            id += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        return id;
-    };
 
     const createGame = () => {
         const newGameId = generateShortGameId();
@@ -209,12 +149,12 @@ function App() {
         initialGameData.currentPrize = initialGameData.prizeDeck[0];
         initialGameData.prizeDeck = initialGameData.prizeDeck.slice(1);
 
-        set(ref(db, `games/${newGameId}`), initialGameData);
+        set(ref(db, `${FIREBASE_PATHS.GAMES}/${newGameId}`), initialGameData);
         setGameId(newGameId);
         setPlayerId(ROLES.HOST);
 
         // Save to localStorage for reconnection
-        localStorage.setItem('activeGame', JSON.stringify({
+        localStorage.setItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME, JSON.stringify({
             gameId: newGameId,
             playerId: ROLES.HOST,
             timestamp: Date.now()
@@ -223,7 +163,7 @@ function App() {
     };
 
     const joinGame = (code) => {
-        const gameRef = ref(db, `games/${code}`);
+        const gameRef = ref(db, `${FIREBASE_PATHS.GAMES}/${code}`);
 
         // Check if game exists
         get(gameRef).then((snapshot) => {
@@ -255,7 +195,7 @@ function App() {
                 setPlayerId(role);
 
                 // Save to localStorage for reconnection
-                localStorage.setItem('activeGame', JSON.stringify({
+                localStorage.setItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME, JSON.stringify({
                     gameId: code,
                     playerId: role,
                     timestamp: Date.now()
@@ -273,7 +213,7 @@ function App() {
     useEffect(() => {
         if (!gameId) return;
 
-        const gameRef = ref(db, `games/${gameId}`);
+        const gameRef = ref(db, `${FIREBASE_PATHS.GAMES}/${gameId}`);
         const unsubscribe = onValue(gameRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
@@ -300,7 +240,7 @@ function App() {
         // Send heartbeat every 5 seconds
         const heartbeatInterval = setInterval(() => {
             sendHeartbeat(gameId, playerId, localTime);
-        }, 5000);
+        }, TIMINGS.HEARTBEAT_INTERVAL);
 
         return () => {
             clearInterval(heartbeatInterval);
@@ -330,7 +270,7 @@ function App() {
                             console.log('[MATCHMAKING] Found my game!', id);
 
                             // Remove myself from queue
-                            set(ref(db, `queue/${userId}`), null);
+                            set(ref(db, `${FIREBASE_PATHS.QUEUE}/${userId}`), null);
 
                             // Join the game
                             setGameId(id);
@@ -434,7 +374,7 @@ function App() {
             const checkTimeout = setInterval(() => {
                 const elapsed = Date.now() - disconnectTime;
 
-                if (elapsed >= 30000) {
+                if (elapsed >= TIMINGS.DISCONNECT_TIMEOUT) {
                     console.log('[DISCONNECT] 30s timeout reached, ending game');
                     clearInterval(checkTimeout);
                     handleOpponentDisconnect();
@@ -463,14 +403,14 @@ function App() {
         const oppRequested = playerId === ROLES.HOST ? rematch.guestRequest : rematch.hostRequest;
         const myRequest = playerId === ROLES.HOST ? rematch.hostRequest : rematch.guestRequest;
 
-        if (oppRequested && !myRequest && rematchStatus !== 'opponent-requested') {
-            setRematchStatus('opponent-requested');
+        if (oppRequested && !myRequest && rematchStatus !== REMATCH_STATUS.OPPONENT_REQUESTED) {
+            setRematchStatus(REMATCH_STATUS.OPPONENT_REQUESTED);
         }
 
         // Check if both accepted OR both requested (race condition fix)
         // AND newGameId doesn't exist yet (prevent duplicate creation)
-        if ((rematch.accepted || (rematch.hostRequest && rematch.guestRequest)) && rematchStatus !== 'accepted' && !rematch.newGameId) {
-            setRematchStatus('accepted');
+        if ((rematch.accepted || (rematch.hostRequest && rematch.guestRequest)) && rematchStatus !== REMATCH_STATUS.ACCEPTED && !rematch.newGameId) {
+            setRematchStatus(REMATCH_STATUS.ACCEPTED);
             // Only host creates the game
             if (playerId === ROLES.HOST) {
                 handleRematchAccepted();
@@ -478,7 +418,7 @@ function App() {
         }
 
         // Check if new game has been created (both players detect it)
-        if (rematch.newGameId && rematchStatus === 'accepted') {
+        if (rematch.newGameId && rematchStatus === REMATCH_STATUS.ACCEPTED) {
             console.log('[REMATCH] Detected new game, transitioning...', rematch.newGameId);
 
             // Clean up presence for old game
@@ -501,7 +441,7 @@ function App() {
             setRematchStatus(null);
 
             // Update localStorage
-            localStorage.setItem('activeGame', JSON.stringify({
+            localStorage.setItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME, JSON.stringify({
                 gameId: rematch.newGameId,
                 playerId: playerId,
                 timestamp: Date.now()
@@ -512,8 +452,8 @@ function App() {
 
         // Check if opponent left (their data becomes null or undefined)
         if (!oppData || (!oppData.id && myRequest)) {
-            if (rematchStatus !== 'left') {
-                setRematchStatus('left');
+            if (rematchStatus !== REMATCH_STATUS.LEFT) {
+                setRematchStatus(REMATCH_STATUS.LEFT);
                 setTimeout(() => {
                     window.location.reload();
                 }, 3000);
@@ -557,12 +497,12 @@ function App() {
 
                 // End the game
                 const updates = {};
-                updates[`games/${gameId}/status`] = GAME_STATUS.END;
-                updates[`games/${gameId}/host/score`] = hostScore;
-                updates[`games/${gameId}/guest/score`] = guestScore;
-                updates[`games/${gameId}/log`] = {
+                updates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.END;
+                updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = hostScore;
+                updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = guestScore;
+                updates[`${FIREBASE_PATHS.GAMES}/${gameId}/log`] = {
                     msg: hostTimedOut ? MESSAGES.HOST_TIMED_OUT : MESSAGES.GUEST_TIMED_OUT,
-                    type: 'danger'
+                    type: LOG_TYPES.DANGER
                 };
 
                 update(ref(db), updates).then(() => {
@@ -570,11 +510,11 @@ function App() {
                     handleGameEnd(hostScore, guestScore);
 
                     // Clear localStorage
-                    localStorage.removeItem('activeGame');
+                    localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
                 });
             } else {
                 // Guest just clears their localStorage
-                localStorage.removeItem('activeGame');
+                localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
             }
         }
     }, [gameData, gameId, playerId, localTime, oppLocalTime, isHost]);
@@ -756,7 +696,7 @@ function App() {
                 joinGame(opponentWithGame.gameId);
 
                 // Remove self from queue
-                remove(ref(db, `queue/${userId}`));
+                remove(ref(db, `${FIREBASE_PATHS.QUEUE}/${userId}`));
                 return;
             }
 
@@ -790,8 +730,8 @@ function App() {
 
                 if (shouldCreateGame) {
                     // Double-check both still in queue
-                    const oppStillInQueue = await get(ref(db, `queue/${bestMatch.userId}`));
-                    const iStillInQueue = await get(ref(db, `queue/${userId}`));
+                    const oppStillInQueue = await get(ref(db, `${FIREBASE_PATHS.QUEUE}/${bestMatch.userId}`));
+                    const iStillInQueue = await get(ref(db, `${FIREBASE_PATHS.QUEUE}/${userId}`));
 
                     console.log('[MATCHMAKING] Still in queue?', {
                         me: iStillInQueue.exists(),
@@ -849,19 +789,21 @@ function App() {
         }
     }, [gameData?.status, showEndScreen]);
 
-    const resolveRound = () => {
+    // --- Host-Authoritative Round Resolution ---
+    // This function is ONLY called by the Host player.
+    // It calculates the outcome of the round, updates scores, and handles the transition to the next round.
+    // The Guest player simply listens for these updates.
+    const resolveRound = (hostBid, guestBid) => {
         if (!gameData) return;
 
         console.log('[RESOLVE] Starting round resolution', {
             round: gameData.round,
-            hostBid: gameData.host.bid,
-            guestBid: gameData.guest.bid,
+            hostBid: hostBid,
+            guestBid: guestBid,
             prize: gameData.currentPrize,
             currentScores: { host: gameData.host.score, guest: gameData.guest.score }
         });
 
-        const hostBid = gameData.host.bid;
-        const guestBid = gameData.guest.bid;
         const prize = gameData.currentPrize;
 
         let hostScore = gameData.host.score;
@@ -913,16 +855,16 @@ function App() {
 
         // Update DB with results
         const updates = {};
-        updates[`games/${gameId}/status`] = GAME_STATUS.RESOLVING;
-        updates[`games/${gameId}/host/score`] = hostScore;
-        updates[`games/${gameId}/guest/score`] = guestScore;
-        updates[`games/${gameId}/host/time`] = newHostTime;
-        updates[`games/${gameId}/guest/time`] = newGuestTime;
-        updates[`games/${gameId}/log`] = { msg, type }; // Shared log
-        updates[`games/${gameId}/host/graveyard`] = newHostGraveyard;
-        updates[`games/${gameId}/guest/graveyard`] = newGuestGraveyard;
-        updates[`games/${gameId}/prizeGraveyard`] = newPrizeGraveyard;
-        updates[`games/${gameId}/tie`] = isTie; // Set tie flag for both players to read
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.RESOLVING;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = hostScore;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = guestScore;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/time`] = newHostTime;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/time`] = newGuestTime;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/log`] = { msg, type }; // Shared log
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/graveyard`] = newHostGraveyard;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/graveyard`] = newGuestGraveyard;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/prizeGraveyard`] = newPrizeGraveyard;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/tie`] = isTie; // Set tie flag for both players to read
 
         console.log('[RESOLVE] Sending immediate updates', updates);
         update(ref(db), updates);
@@ -934,25 +876,25 @@ function App() {
             const nextUpdates = {};
 
             // Clear bids
-            nextUpdates[`games/${gameId}/host/bid`] = null;
-            nextUpdates[`games/${gameId}/guest/bid`] = null;
-            nextUpdates[`games/${gameId}/tie`] = false; // Clear tie flag
+            nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/bid`] = null;
+            nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/bid`] = null;
+            nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/tie`] = false; // Clear tie flag
 
             // Next Prize
             if ((gameData.prizeDeck && gameData.prizeDeck.length > 0) && !hostHasWon && !guestHasWon) {
-                nextUpdates[`games/${gameId}/currentPrize`] = gameData.prizeDeck[0];
-                nextUpdates[`games/${gameId}/prizeDeck`] = gameData.prizeDeck.slice(1);
-                nextUpdates[`games/${gameId}/status`] = GAME_STATUS.PLAYING;
-                nextUpdates[`games/${gameId}/round`] = gameData.round + 1;
-                nextUpdates[`games/${gameId}/roundStart`] = serverTimestamp();
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/currentPrize`] = gameData.prizeDeck[0];
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/prizeDeck`] = gameData.prizeDeck.slice(1);
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.PLAYING;
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/round`] = gameData.round + 1;
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/roundStart`] = serverTimestamp();
             } else {
                 // Game ends (either no more cards or early win)
-                nextUpdates[`games/${gameId}/status`] = GAME_STATUS.END;
-                nextUpdates[`games/${gameId}/currentPrize`] = null;
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.END;
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/currentPrize`] = null;
 
                 // Set log message for early win
                 if (hostHasWon || guestHasWon) {
-                    nextUpdates[`games/${gameId}/log`] = {
+                    nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/log`] = {
                         msg: hostHasWon ? MESSAGES.HOST_WINS_LEAD : MESSAGES.GUEST_WINS_LEAD,
                         type: hostHasWon ? ROLES.HOST : ROLES.GUEST
                     };
@@ -973,18 +915,18 @@ function App() {
         console.log('[DISCONNECT] Ending game due to opponent disconnect');
 
         const updates = {};
-        updates[`games/${gameId}/status`] = GAME_STATUS.END;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.END;
 
         // Award victory to connected player (me), loss to disconnected player
         const myScore = 999;
         const oppScore = 0;
 
         if (isHost) {
-            updates[`games/${gameId}/host/score`] = myScore;
-            updates[`games/${gameId}/guest/score`] = oppScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = myScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = oppScore;
         } else {
-            updates[`games/${gameId}/guest/score`] = myScore;
-            updates[`games/${gameId}/host/score`] = oppScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = myScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = oppScore;
         }
 
         await update(ref(db), updates);
@@ -993,7 +935,7 @@ function App() {
         await handleGameEnd(isHost ? myScore : oppScore, isHost ? oppScore : myScore);
 
         // Clear localStorage
-        localStorage.removeItem('activeGame');
+        localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
 
         setShowDisconnectWarning(false);
     };
@@ -1018,7 +960,7 @@ function App() {
 
         // Store rating updates in the game object
         // Each player will read their own stats and update their profile
-        await update(ref(db, `games/${gameId}/ratingUpdates`), {
+        await update(ref(db, `${FIREBASE_PATHS.GAMES}/${gameId}/ratingUpdates`), {
             host: {
                 gamesPlayed: (p1.gamesPlayed || 0) + 1,
                 gamesWon: (p1.gamesWon || 0) + (outcome === 1 ? 1 : 0),
@@ -1039,24 +981,24 @@ function App() {
     const handleRequestRematch = () => {
         if (!gameId || !playerId) return;
 
-        setRematchStatus('waiting');
+        setRematchStatus(REMATCH_STATUS.WAITING);
         const updates = {};
-        updates[`games/${gameId}/rematch/${playerId}Request`] = true;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/rematch/${playerId}Request`] = true;
 
         // Check if opponent already requested
         const oppRequested = playerId === ROLES.HOST ? gameData.rematch?.guestRequest : gameData.rematch?.hostRequest;
         if (oppRequested) {
-            updates[`games/${gameId}/rematch/accepted`] = true;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/rematch/accepted`] = true;
         }
 
         update(ref(db), updates);
     };
 
     const handleDeclineRematch = () => {
-        setRematchStatus('declined');
+        setRematchStatus(REMATCH_STATUS.DECLINED);
         setTimeout(() => {
             window.location.reload(); // Return to lobby
-        }, 2000);
+        }, TIMINGS.DECLINE_RELOAD_DELAY);
     };
 
     const handleCancelWaiting = async () => {
@@ -1065,10 +1007,10 @@ function App() {
         console.log('[CANCEL] Cancelling game creation:', gameId);
 
         // Remove the game from database
-        await set(ref(db, `games/${gameId}`), null);
+        await set(ref(db, `${FIREBASE_PATHS.GAMES}/${gameId}`), null);
 
         // Clear localStorage
-        localStorage.removeItem('activeGame');
+        localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
 
         // Reset state to return to lobby
         setGameId(null);
@@ -1076,6 +1018,9 @@ function App() {
         setGameData(null);
     };
 
+    // --- Rematch Logic ---
+    // When both players accept, the Host creates a new game and links it to the old one.
+    // Both players then detect the link and transition.
     const handleRematchAccepted = async () => {
         if (playerId !== ROLES.HOST || !gameData) return; // Only host creates the new game
 
@@ -1109,7 +1054,7 @@ function App() {
                 name: gameData.guest.name
             },
             prizeGraveyard: [],
-            log: { msg: `${MESSAGES.ROUND_PREFIX}1`, type: 'neutral' },
+            log: { msg: `${MESSAGES.ROUND_PREFIX}1`, type: LOG_TYPES.NEUTRAL },
             lastAction: Date.now(),
             roundStart: serverTimestamp(),
             rematch: {
@@ -1125,17 +1070,17 @@ function App() {
         };
 
         // Create the new game
-        await set(ref(db, `games/${newGameId}`), newGameData);
+        await set(ref(db, `${FIREBASE_PATHS.GAMES}/${newGameId}`), newGameData);
 
         console.log('[REMATCH] New game created:', newGameId);
 
         // Update the old game to mark it as rematched
-        await update(ref(db, `games/${gameId}`), {
+        await update(ref(db, `${FIREBASE_PATHS.GAMES}/${gameId}`), {
             rematchedTo: newGameId
         });
 
         // Store reference to new game in state variable so both players can transition
-        await update(ref(db, `games/${gameId}/rematch`), {
+        await update(ref(db, `${FIREBASE_PATHS.GAMES}/${gameId}/rematch`), {
             newGameId: newGameId
         });
 
@@ -1159,14 +1104,14 @@ function App() {
         const oppScore = 999;
 
         const updates = {};
-        updates[`games/${gameId}/status`] = GAME_STATUS.END;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.END;
 
         if (isHost) {
-            updates[`games/${gameId}/host/score`] = myScore;
-            updates[`games/${gameId}/guest/score`] = oppScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = myScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = oppScore;
         } else {
-            updates[`games/${gameId}/guest/score`] = myScore;
-            updates[`games/${gameId}/host/score`] = oppScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = myScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = oppScore;
         }
 
         await update(ref(db), updates);
@@ -1177,7 +1122,7 @@ function App() {
         }
 
         // Clear localStorage
-        localStorage.removeItem('activeGame');
+        localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
 
         console.log('[FORFEIT] Game ended');
     };
@@ -1193,7 +1138,7 @@ function App() {
         setSearchStartTime(Date.now());
 
         // Add to queue
-        const queueEntryRef = ref(db, `queue/${userId}`);
+        const queueEntryRef = ref(db, `${FIREBASE_PATHS.QUEUE}/${userId}`);
         await set(queueEntryRef, {
             userId,
             rating: myProfile.rating || 1000,
@@ -1210,7 +1155,7 @@ function App() {
     const handleCancelSearch = async () => {
         const userId = getUserId();
         console.log('[MATCHMAKING] Cancelling search...', { userId });
-        await set(ref(db, `queue/${userId}`), null); // Remove from queue
+        await set(ref(db, `${FIREBASE_PATHS.QUEUE}/${userId}`), null); // Remove from queue
         setIsSearching(false);
         setIsMatching(false); // Reset matching state
         setSearchStartTime(null);
@@ -1274,7 +1219,7 @@ function App() {
                 name: getUserName()
             },
             prizeGraveyard: [],
-            log: { msg: `${MESSAGES.ROUND_PREFIX}1`, type: 'neutral' },
+            log: { msg: `${MESSAGES.ROUND_PREFIX}1`, type: LOG_TYPES.NEUTRAL },
             lastAction: Date.now(),
             roundStart: serverTimestamp(),
             rematch: {
@@ -1289,13 +1234,13 @@ function App() {
         };
 
         // Create the game
-        await set(ref(db, `games/${newGameId}`), initialGameData);
+        await set(ref(db, `${FIREBASE_PATHS.GAMES}/${newGameId}`), initialGameData);
         console.log('[MATCHMAKING] Game created:', newGameId);
 
         // Update MY queue entry with the gameId
         // The opponent is watching the queue and will see that I have created a game
         // and that they are matched with me
-        await update(ref(db, `queue/${userId}`), {
+        await update(ref(db, `${FIREBASE_PATHS.QUEUE}/${userId}`), {
             gameId: newGameId,
             matchedWith: opponent.userId
         });
@@ -1314,7 +1259,7 @@ function App() {
         setSearchStartTime(null);
 
         // Save to localStorage for reconnection
-        localStorage.setItem('activeGame', JSON.stringify({
+        localStorage.setItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME, JSON.stringify({
             gameId: newGameId,
             playerId: iAmHost ? ROLES.HOST : ROLES.GUEST,
             timestamp: Date.now()
@@ -1323,9 +1268,9 @@ function App() {
 
         // Remove myself from queue after a delay to ensure opponent sees it
         setTimeout(() => {
-            remove(ref(db, `queue/${userId}`));
+            remove(ref(db, `${FIREBASE_PATHS.QUEUE}/${userId}`));
             console.log('[MATCHMAKING] Removed myself from queue');
-        }, 5000);
+        }, TIMINGS.HEARTBEAT_INTERVAL);
 
         console.log('[MATCHMAKING] Match complete!');
     };
@@ -1372,15 +1317,15 @@ function App() {
         setTimeout(() => {
             // Commit Bid to Firebase
             const updates = {};
-            updates[`games/${gameId}/${playerId}/bid`] = rank;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/${playerId}/bid`] = rank;
 
             // Remove from hand
             const currentHand = playerId === ROLES.HOST ? gameData.host.hand : gameData.guest.hand;
             const newHand = currentHand.filter(c => c !== rank);
-            updates[`games/${gameId}/${playerId}/hand`] = newHand;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/${playerId}/hand`] = newHand;
 
             // Save Time
-            updates[`games/${gameId}/${playerId}/bidAt`] = serverTimestamp();
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/${playerId}/bidAt`] = serverTimestamp();
 
             update(ref(db), updates);
 
@@ -1434,7 +1379,7 @@ function App() {
     const showMyBid = !!myBid;
     const showOppBid = gameData.status === GAME_STATUS.RESOLVING || gameData.status === GAME_STATUS.END; // Only show opp bid when resolving
 
-    const currentLog = gameData.log || { msg: `${MESSAGES.ROUND_PREFIX}${gameData.round}`, type: 'neutral' };
+    const currentLog = gameData.log || { msg: `${MESSAGES.ROUND_PREFIX}${gameData.round}`, type: LOG_TYPES.NEUTRAL };
 
     const getCardStyle = (index, total) => {
         const isMobile = window.innerWidth < 640;
