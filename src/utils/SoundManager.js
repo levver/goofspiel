@@ -18,7 +18,7 @@ class SoundManager {
         this.isPlaying = false;
         this.nextNoteTime = 0.0;
         this.current16thNote = 0;
-        this.tempo = 110.0;
+        this.tempo = 125.0; // Increased energy
         this.lookahead = 25.0; // ms
         this.scheduleAheadTime = 0.1; // s
         this.timerID = null;
@@ -128,7 +128,7 @@ class SoundManager {
     }
 
     _scheduler() {
-        // While there are notes that will need to play before the next interval, 
+        // While there are notes that will need to play before the next interval,
         // schedule them and advance the pointer.
         while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAheadTime) {
             this._scheduleNote(this.current16thNote, this.nextNoteTime);
@@ -155,31 +155,33 @@ class SoundManager {
     _scheduleNote(beatNumber, time) {
         // beatNumber is 0..15 (one bar of 16th notes)
 
-        // --- 1. KICK (Four on the floor) ---
-        if (beatNumber % 4 === 0) {
+        // --- 1. KICK (User Pattern: Poly 7s) ---
+        if (beatNumber % 7 === 0) {
             this._playKick(time);
         }
 
-        // --- 2. HI-HAT (Off-beats) ---
-        if (beatNumber % 4 === 2) {
-            this._playHiHat(time, true); // Open ish
-        } else {
-            this._playHiHat(time, false); // Closed tick
-        }
-
-        // --- 3. BASS (Driving 8ths) ---
-        // E2, E2, G2, A2 pattern
+        // --- 2. HI-HAT (Driving 16ths for energy) ---
         if (beatNumber % 2 === 0) {
-            const note = (beatNumber < 8) ? 82.41 : (beatNumber < 12 ? 98.00 : 110.00);
-            this._playBass(time, note, 0.1);
+            // Accent off-beats
+            this._playHiHat(time, beatNumber % 4 === 2);
         }
 
-        // --- 4. ARP / LEAD (Syncopated) ---
-        // 3-3-2 Clave ish feel or random sprinkles
-        const arpPattern = [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0];
+        // --- 3. BASS (User Pattern: Poly 3s, Darker Tone) ---
+        // E Phrygian Bass: E F G A B C D
+        // Root (E) -> Flat 2nd (F) for tension
+        if (beatNumber % 3 === 0) {
+            // Trigger root E or F for tension
+            const note = (beatNumber < 8) ? 82.41 : 87.31; // E2 vs F2 (Minor 2nd interval = Tension)
+            this._playBass(time, note, 0.15); // Slightly longer sustain
+        }
+
+        // --- 4. ARP / LEAD (Dark/Suspenseful) ---
+        // User Pattern
+        const arpPattern = [1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0];
         if (arpPattern[beatNumber]) {
-            // Pentatonic: E G A B D
-            const scale = [329.63, 392.00, 440.00, 493.88, 587.33];
+            // Dark "Cyber Fight" Scale (E Phrygian/Locrian hybrid)
+            // E, F, G, Bb, B (0, 1, 3, 6, 7 semitones)
+            const scale = [329.63, 349.23, 392.00, 466.16, 493.88];
             const pitch = scale[Math.floor(Math.random() * scale.length)];
             this._playArpTone(time, pitch);
         }
@@ -192,16 +194,17 @@ class SoundManager {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
 
-        osc.frequency.setValueAtTime(150, time);
-        osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+        // Punchier kick (higher start freq, faster drop)
+        osc.frequency.setValueAtTime(180, time);
+        osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.4);
         gain.gain.setValueAtTime(0.8, time);
-        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.4);
 
         osc.connect(gain);
         gain.connect(this.musicGain);
 
         osc.start(time);
-        osc.stop(time + 0.5);
+        osc.stop(time + 0.4);
     }
 
     _playHiHat(time, isOpen) {
@@ -215,12 +218,13 @@ class SoundManager {
         noise.buffer = buffer;
 
         const filter = this.ctx.createBiquadFilter();
+        // Sharper, higher metallic hat
         filter.type = 'highpass';
-        filter.frequency.value = 5000;
+        filter.frequency.value = 7000;
 
         const gain = this.ctx.createGain();
-        const decay = isOpen ? 0.1 : 0.03;
-        gain.gain.setValueAtTime(0.3, time);
+        const decay = isOpen ? 0.08 : 0.02; // Very tight
+        gain.gain.setValueAtTime(0.25, time);
         gain.gain.exponentialRampToValueAtTime(0.01, time + decay);
 
         noise.connect(filter);
@@ -232,17 +236,18 @@ class SoundManager {
 
     _playBass(time, freq, duration) {
         const osc = this.ctx.createOscillator();
-        osc.type = 'sawtooth';
+        osc.type = 'sawtooth'; // Aggressive saw
         osc.frequency.value = freq;
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(freq * 4, time);
-        filter.frequency.exponentialRampToValueAtTime(freq, time + duration);
+        filter.Q.value = 5; // Resonant 'acid' bite
+        filter.frequency.setValueAtTime(freq * 8, time); // Start bright
+        filter.frequency.exponentialRampToValueAtTime(freq, time + duration); // Filter sweep down
 
         const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(0.4, time);
-        gain.gain.linearRampToValueAtTime(0, time + duration);
+        gain.gain.setValueAtTime(0.5, time);
+        gain.gain.linearRampToValueAtTime(0, time + duration); // Plucky envelope
 
         osc.connect(filter);
         filter.connect(gain);
@@ -253,16 +258,17 @@ class SoundManager {
     }
 
     _playArpTone(time, freq) {
-        // FM Bell-ish
+        // FM Metallic Pluck
         const carrier = this.ctx.createOscillator();
         const modulator = this.ctx.createOscillator();
         const modGain = this.ctx.createGain();
 
         const vol = this.ctx.createGain();
 
+        carrier.type = 'triangle';
         carrier.frequency.value = freq;
-        modulator.frequency.value = freq * 2; // Ratio 1:2
-        modGain.gain.value = 500;
+        modulator.frequency.value = freq * 2.5; // Dissonant ratio for 'fight' vibe
+        modGain.gain.value = 800; // High modulation index
 
         modulator.connect(modGain);
         modGain.connect(carrier.frequency);
@@ -270,13 +276,13 @@ class SoundManager {
         carrier.connect(vol);
         vol.connect(this.musicGain);
 
-        vol.gain.setValueAtTime(0.1, time);
-        vol.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+        vol.gain.setValueAtTime(0.12, time);
+        vol.gain.exponentialRampToValueAtTime(0.001, time + 0.2); // Short, plucky
 
         carrier.start(time);
         modulator.start(time);
-        carrier.stop(time + 0.3);
-        modulator.stop(time + 0.3);
+        carrier.stop(time + 0.2);
+        modulator.stop(time + 0.2);
     }
 
 
@@ -300,7 +306,7 @@ class SoundManager {
 
         // LFO for filter breath
         const lfo = this.ctx.createOscillator();
-        lfo.frequency.value = 0.05; // Very Slow
+        lfo.frequency.value = 0.08; // Very Slow
         const lfoGain = this.ctx.createGain();
         lfoGain.gain.value = 300;
 
