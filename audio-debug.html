@@ -37,6 +37,12 @@
             margin-top: 2rem;
         }
 
+        h3 {
+            color: #888;
+            font-size: 0.9rem;
+            margin: 1rem 0 0.5rem 0;
+        }
+
         .section {
             margin-bottom: 2rem;
         }
@@ -60,6 +66,31 @@
 
         button:active {
             transform: translateY(0);
+        }
+
+        button.green {
+            border-color: #22c55e;
+        }
+
+        button.green:hover {
+            background: #22c55e;
+        }
+
+        button.red {
+            border-color: #ef4444;
+        }
+
+        button.red:hover {
+            background: #ef4444;
+        }
+
+        button.yellow {
+            border-color: #eab308;
+        }
+
+        button.yellow:hover {
+            background: #eab308;
+            color: #000;
         }
 
         .status {
@@ -133,11 +164,22 @@
 
     <div class="section">
         <h2>Sound Effects</h2>
+
+        <h3>UI Sounds</h3>
         <button id="btn-click">Play Click</button>
-        <button id="btn-hover">Play Hover</button>
         <button id="btn-slide">Play Card Slide</button>
-        <button id="btn-win">Play Win</button>
-        <button id="btn-lose">Play Lose</button>
+
+        <h3>Round Results</h3>
+        <button id="btn-win" class="green">Play Round Win</button>
+        <button id="btn-lose" class="red">Play Round Lose</button>
+        <button id="btn-tie" class="yellow">Play Tie</button>
+
+        <h3>Game End</h3>
+        <button id="btn-game-win" class="green">Play Game Win</button>
+        <button id="btn-game-lose" class="red">Play Game Lose</button>
+
+        <h3>Animations</h3>
+        <button id="btn-separator">Play Separator Break</button>
     </div>
 
     <div class="section">
@@ -187,17 +229,31 @@
             window.location.href = window.location.pathname + '?t=' + Date.now();
         };
 
+        // Core Controls
         document.getElementById('btn-init').onclick = wrapAction('resume()', () => SoundManager.resume());
         document.getElementById('btn-mute').onclick = wrapAction('mute(true)', () => SoundManager.mute(true));
         document.getElementById('btn-unmute').onclick = wrapAction('mute(false)', () => SoundManager.mute(false));
+
+        // Music
         document.getElementById('btn-menu').onclick = wrapAction('startMenuMusic()', () => SoundManager.startMenuMusic());
         document.getElementById('btn-game').onclick = wrapAction('startGameMusic()', () => SoundManager.startGameMusic());
         document.getElementById('btn-stop').onclick = wrapAction('stopMusic()', () => SoundManager.stopMusic());
+
+        // UI Sounds
         document.getElementById('btn-click').onclick = wrapAction('playClick()', () => SoundManager.playClick());
-        document.getElementById('btn-hover').onclick = wrapAction('playHover()', () => SoundManager.playHover());
         document.getElementById('btn-slide').onclick = wrapAction('playCardSlide()', () => SoundManager.playCardSlide());
+
+        // Round Results
         document.getElementById('btn-win').onclick = wrapAction('playWin()', () => SoundManager.playWin());
         document.getElementById('btn-lose').onclick = wrapAction('playLose()', () => SoundManager.playLose());
+        document.getElementById('btn-tie').onclick = wrapAction('playTie()', () => SoundManager.playTie());
+
+        // Game End
+        document.getElementById('btn-game-win').onclick = wrapAction('playGameWin()', () => SoundManager.playGameWin());
+        document.getElementById('btn-game-lose').onclick = wrapAction('playGameLose()', () => SoundManager.playGameLose());
+
+        // Animations
+        document.getElementById('btn-separator').onclick = wrapAction('playSeparatorBreak()', () => SoundManager.playSeparatorBreak());
 
         log('Debug console ready. Click "Initialize / Resume" to start audio.');
         updateStatus();

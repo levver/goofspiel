@@ -159,7 +159,7 @@ class SoundManager {
     _scheduleNote(beatNumber, time) {
         // beatNumber is 0..15 (one bar of 16th notes)
 
-        // --- 1. KICK (User Pattern: 4s) ---
+        // --- KICK (User Pattern: 4s) ---
         if (this.stepCounter % 64 > 11 && this.stepCounter % 4 === 0 && this.stepCounter % 64 < 50) {
             this._playKick(time, 0.2);
         }
@@ -170,22 +170,11 @@ class SoundManager {
         }
 
 
-        // --- 2. BASS (User Pattern: Poly 3s, Darker Tone) ---
-        // D Phrygian Bass: D Eb F G A Bb C
-        // Root (D) -> Flat 2nd (Eb) for tension
-        // if (this.stepCounter % 9 === 0) {
-        //     // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
-        //     this._playBass(time, 220.00, 0.1); // Slightly longer sustain
-        // }
-
-
-        // --- 4. MAIN THEME (Jazzy/Blade Runner Structure) ---
+        // --- MAIN THEME (Jazzy/Blade Runner Structure) ---
         // Consistent 4-bar loop (64 steps)
         // D Phrygian Noir: D, F, G, A, Bb, C, Eb, D
         const loopStep = this.stepCounter % 64;
 
-        // Melody Map: { step: frequency }
-        // Syncopated, sparse phrasing
         if (loopStep === 0) this._playStaccatoVoice(time, 146.83); // D3
         if (loopStep === 1) this._playStaccatoVoice(time, 174.61); // F3
         if (loopStep === 2) this._playStaccatoVoice(time, 196.00); // G3
@@ -515,20 +504,7 @@ class SoundManager {
     }
 
 
-    // --- SFX (Unchanged) ---
-    playHover() {
-        if (!this.ctx || this.isMuted) return;
-        this.resume();
-        const t = this.ctx.currentTime;
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        osc.frequency.setValueAtTime(880, t);
-        osc.frequency.exponentialRampToValueAtTime(1200, t + 0.05);
-        g.gain.setValueAtTime(0.05, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-        osc.connect(g); g.connect(this.sfxGain);
-        osc.start(t); osc.stop(t + 0.05);
-    }
+    // --- SFX ---
 
     playClick() {
         if (!this.ctx || this.isMuted) return;
@@ -563,9 +539,390 @@ class SoundManager {
         bs.start();
     }
 
-    playWin() { this._playArp([466.16, 587.33, 698.46, 932.33]); } // Bb Major
-    playLose() { this._playArp([392.00, 370.00, 349.23, 329.63]); } // G Descending
+    // Round Win - Hard esports-style impact stinger
+    playWin() {
+        if (!this.ctx || this.isMuted) return;
+        this.resume();
+        const now = this.ctx.currentTime;
 
+        // Impact transient - punchy low hit
+        const impact = this.ctx.createOscillator();
+        impact.type = 'sine';
+        impact.frequency.setValueAtTime(150, now);
+        impact.frequency.exponentialRampToValueAtTime(50, now + 0.15);
+
+        const impactGain = this.ctx.createGain();
+        impactGain.gain.setValueAtTime(0.35, now);
+        impactGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+        impact.connect(impactGain);
+        impactGain.connect(this.sfxGain);
+        impact.start(now);
+        impact.stop(now + 0.2);
+
+        // Rising power chord - D5 power chord with distortion feel
+        const chord = [293.66, 440.00, 587.33]; // D4, A4, D5 (power chord)
+        chord.forEach((freq, i) => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.value = freq;
+
+            // Aggressive filter sweep up
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.Q.value = 3;
+            filter.frequency.setValueAtTime(500, now + 0.05);
+            filter.frequency.exponentialRampToValueAtTime(4000, now + 0.15);
+            filter.frequency.exponentialRampToValueAtTime(1500, now + 0.35);
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0, now + 0.05);
+            gain.gain.linearRampToValueAtTime(0.08, now + 0.1);
+            gain.gain.linearRampToValueAtTime(0.06, now + 0.25);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.sfxGain);
+            osc.start(now + 0.05);
+            osc.stop(now + 0.45);
+        });
+
+        // High shimmer accent
+        const shimmer = this.ctx.createOscillator();
+        shimmer.type = 'sine';
+        shimmer.frequency.value = 1174.66; // D6
+        const shimmerGain = this.ctx.createGain();
+        shimmerGain.gain.setValueAtTime(0, now + 0.1);
+        shimmerGain.gain.linearRampToValueAtTime(0.05, now + 0.15);
+        shimmerGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        shimmer.connect(shimmerGain);
+        shimmerGain.connect(this.sfxGain);
+        shimmer.start(now + 0.1);
+        shimmer.stop(now + 0.35);
+    }
+
+    // Round Lose - Dark esports-style negative stinger
+    playLose() {
+        if (!this.ctx || this.isMuted) return;
+        this.resume();
+        const now = this.ctx.currentTime;
+
+        // Low thud impact
+        const thud = this.ctx.createOscillator();
+        thud.type = 'sine';
+        thud.frequency.setValueAtTime(80, now);
+        thud.frequency.exponentialRampToValueAtTime(30, now + 0.25);
+
+        const thudGain = this.ctx.createGain();
+        thudGain.gain.setValueAtTime(0.3, now);
+        thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+        thud.connect(thudGain);
+        thudGain.connect(this.sfxGain);
+        thud.start(now);
+        thud.stop(now + 0.3);
+
+        // Descending dissonant cluster
+        const cluster = [311.13, 293.66, 277.18]; // Eb4, D4, C#4 (minor 2nd dissonance)
+        cluster.forEach((freq, i) => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq * 1.02, now + 0.02);
+            osc.frequency.exponentialRampToValueAtTime(freq * 0.7, now + 0.35);
+
+            // Filter closing down (darkening)
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.Q.value = 2;
+            filter.frequency.setValueAtTime(2000, now + 0.02);
+            filter.frequency.exponentialRampToValueAtTime(200, now + 0.35);
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0, now + 0.02);
+            gain.gain.linearRampToValueAtTime(0.06, now + 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.sfxGain);
+            osc.start(now + 0.02);
+            osc.stop(now + 0.45);
+        });
+
+        // Noise burst for harshness
+        const bufferSize = this.ctx.sampleRate * 0.1;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = 800;
+        noiseFilter.Q.value = 1;
+
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.08, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(this.sfxGain);
+        noise.start(now);
+    }
+
+    // Game Win Music - Triumphant D Phrygian fanfare
+    playGameWin() {
+        if (!this.ctx || this.isMuted) return;
+        this.resume();
+        const now = this.ctx.currentTime;
+
+        // Melodic fanfare: D3 -> A3 -> D4 -> Eb4 (tension) -> D4 (resolve) with long sustain
+        const melody = [
+            { freq: 146.83, time: 0, dur: 0.3 },      // D3
+            { freq: 220.00, time: 0.25, dur: 0.3 },   // A3
+            { freq: 293.66, time: 0.5, dur: 0.4 },    // D4
+            { freq: 311.13, time: 0.85, dur: 0.2 },   // Eb4 (Blade Runner tension)
+            { freq: 293.66, time: 1.0, dur: 0.8 },    // D4 (resolve)
+        ];
+
+        melody.forEach(note => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.value = note.freq;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(400, now + note.time);
+            filter.frequency.exponentialRampToValueAtTime(2000, now + note.time + note.dur * 0.5);
+            filter.frequency.exponentialRampToValueAtTime(800, now + note.time + note.dur);
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0, now + note.time);
+            gain.gain.linearRampToValueAtTime(0.15, now + note.time + 0.05);
+            gain.gain.linearRampToValueAtTime(0.1, now + note.time + note.dur * 0.7);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + note.time + note.dur);
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.sfxGain);
+
+            osc.start(now + note.time);
+            osc.stop(now + note.time + note.dur + 0.1);
+        });
+
+        // Add bass drone for depth
+        const bass = this.ctx.createOscillator();
+        bass.type = 'triangle';
+        bass.frequency.value = 73.42; // D2
+        const bassGain = this.ctx.createGain();
+        bassGain.gain.setValueAtTime(0, now);
+        bassGain.gain.linearRampToValueAtTime(0.2, now + 0.1);
+        bassGain.gain.linearRampToValueAtTime(0.15, now + 1.5);
+        bassGain.gain.exponentialRampToValueAtTime(0.001, now + 2.0);
+        bass.connect(bassGain);
+        bassGain.connect(this.sfxGain);
+        bass.start(now);
+        bass.stop(now + 2.0);
+    }
+
+    // Game Lose Music - Descending D Phrygian lament
+    playGameLose() {
+        if (!this.ctx || this.isMuted) return;
+        this.resume();
+        const now = this.ctx.currentTime;
+
+        // Descending somber melody with slower tempo
+        const melody = [
+            { freq: 293.66, time: 0, dur: 0.4 },      // D4
+            { freq: 261.63, time: 0.35, dur: 0.3 },   // C4
+            { freq: 233.08, time: 0.65, dur: 0.35 },  // Bb3
+            { freq: 196.00, time: 1.0, dur: 0.4 },    // G3
+            { freq: 174.61, time: 1.35, dur: 0.5 },   // F3
+            { freq: 146.83, time: 1.8, dur: 0.8 },    // D3 (final)
+        ];
+
+        melody.forEach(note => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sine'; // Softer tone for sadness
+            osc.frequency.value = note.freq;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(1200, now + note.time);
+            filter.frequency.exponentialRampToValueAtTime(400, now + note.time + note.dur);
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0, now + note.time);
+            gain.gain.linearRampToValueAtTime(0.1, now + note.time + 0.05);
+            gain.gain.linearRampToValueAtTime(0.06, now + note.time + note.dur * 0.6);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + note.time + note.dur);
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.sfxGain);
+
+            osc.start(now + note.time);
+            osc.stop(now + note.time + note.dur + 0.1);
+        });
+
+        // Low rumble undertone
+        const bass = this.ctx.createOscillator();
+        bass.type = 'triangle';
+        bass.frequency.value = 73.42; // D2
+        bass.frequency.exponentialRampToValueAtTime(55, now + 2.5); // Drop down
+        const bassGain = this.ctx.createGain();
+        bassGain.gain.setValueAtTime(0, now);
+        bassGain.gain.linearRampToValueAtTime(0.15, now + 0.2);
+        bassGain.gain.linearRampToValueAtTime(0.08, now + 2.0);
+        bassGain.gain.exponentialRampToValueAtTime(0.001, now + 2.8);
+        bass.connect(bassGain);
+        bassGain.connect(this.sfxGain);
+        bass.start(now);
+        bass.stop(now + 2.8);
+    }
+
+    // Tie Sound - Tension building + loud snap (synced to 1500ms animation)
+    playTie() {
+        if (!this.ctx || this.isMuted) return;
+        this.resume();
+        const now = this.ctx.currentTime;
+
+        // Phase 1: Tension building (0-1200ms) - Rising pitch and filter with dissonance
+        const tensionOsc1 = this.ctx.createOscillator();
+        const tensionOsc2 = this.ctx.createOscillator();
+        tensionOsc1.type = 'sawtooth';
+        tensionOsc2.type = 'sawtooth';
+
+        // Start at Eb4 (tension note from theme) and rise with dissonance
+        tensionOsc1.frequency.setValueAtTime(311.13, now); // Eb4
+        tensionOsc1.frequency.exponentialRampToValueAtTime(466.16, now + 1.2); // Rise to Bb4
+        tensionOsc2.frequency.setValueAtTime(329.63, now); // E4 (dissonant with Eb)
+        tensionOsc2.frequency.exponentialRampToValueAtTime(493.88, now + 1.2); // Rise to B4 (max tension)
+
+        const tensionFilter = this.ctx.createBiquadFilter();
+        tensionFilter.type = 'lowpass';
+        tensionFilter.Q.value = 5; // Resonance for intensity
+        tensionFilter.frequency.setValueAtTime(200, now);
+        tensionFilter.frequency.exponentialRampToValueAtTime(4000, now + 1.2);
+
+        const tensionGain = this.ctx.createGain();
+        tensionGain.gain.setValueAtTime(0, now);
+        tensionGain.gain.linearRampToValueAtTime(0.08, now + 0.1);
+        tensionGain.gain.linearRampToValueAtTime(0.15, now + 1.1);
+        tensionGain.gain.linearRampToValueAtTime(0, now + 1.25); // Quick fade before snap
+
+        tensionOsc1.connect(tensionFilter);
+        tensionOsc2.connect(tensionFilter);
+        tensionFilter.connect(tensionGain);
+        tensionGain.connect(this.sfxGain);
+
+        tensionOsc1.start(now);
+        tensionOsc2.start(now);
+        tensionOsc1.stop(now + 1.25);
+        tensionOsc2.stop(now + 1.25);
+
+        // Phase 2: Loud Snap (at 1200ms, lasting ~300ms)
+        const snapTime = now + 1.2;
+
+        // Noise burst for snap impact
+        const bufferSize = this.ctx.sampleRate * 0.15;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = 2000;
+        noiseFilter.Q.value = 1;
+
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.4, snapTime); // Loud!
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, snapTime + 0.15);
+
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(this.sfxGain);
+        noise.start(snapTime);
+
+        // Impact tone
+        const impactOsc = this.ctx.createOscillator();
+        impactOsc.type = 'square';
+        impactOsc.frequency.setValueAtTime(150, snapTime);
+        impactOsc.frequency.exponentialRampToValueAtTime(40, snapTime + 0.2);
+
+        const impactGain = this.ctx.createGain();
+        impactGain.gain.setValueAtTime(0.25, snapTime);
+        impactGain.gain.exponentialRampToValueAtTime(0.001, snapTime + 0.3);
+
+        impactOsc.connect(impactGain);
+        impactGain.connect(this.sfxGain);
+        impactOsc.start(snapTime);
+        impactOsc.stop(snapTime + 0.3);
+    }
+
+    // Separator Break Sound - Glass/crystal shattering effect
+    playSeparatorBreak() {
+        if (!this.ctx || this.isMuted) return;
+        this.resume();
+        const now = this.ctx.currentTime;
+
+        // High metallic crack
+        const crack = this.ctx.createOscillator();
+        crack.type = 'square';
+        crack.frequency.setValueAtTime(4000, now);
+        crack.frequency.exponentialRampToValueAtTime(800, now + 0.08);
+
+        const crackGain = this.ctx.createGain();
+        crackGain.gain.setValueAtTime(0.2, now);
+        crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+        crack.connect(crackGain);
+        crackGain.connect(this.sfxGain);
+        crack.start(now);
+        crack.stop(now + 0.1);
+
+        // Shimmer debris (multiple high freq oscillators)
+        for (let i = 0; i < 5; i++) {
+            const debris = this.ctx.createOscillator();
+            debris.type = 'sine';
+            const baseFreq = 2000 + Math.random() * 3000;
+            debris.frequency.setValueAtTime(baseFreq, now + 0.02 * i);
+            debris.frequency.exponentialRampToValueAtTime(baseFreq * 0.3, now + 0.3 + 0.05 * i);
+
+            const debrisGain = this.ctx.createGain();
+            debrisGain.gain.setValueAtTime(0.06, now + 0.02 * i);
+            debrisGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3 + 0.1 * i);
+
+            debris.connect(debrisGain);
+            debrisGain.connect(this.sfxGain);
+            debris.start(now + 0.02 * i);
+            debris.stop(now + 0.4 + 0.1 * i);
+        }
+
+        // Low thud for impact weight
+        const thud = this.ctx.createOscillator();
+        thud.type = 'triangle';
+        thud.frequency.setValueAtTime(100, now);
+        thud.frequency.exponentialRampToValueAtTime(30, now + 0.15);
+
+        const thudGain = this.ctx.createGain();
+        thudGain.gain.setValueAtTime(0.15, now);
+        thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+        thud.connect(thudGain);
+        thudGain.connect(this.sfxGain);
+        thud.start(now);
+        thud.stop(now + 0.2);
+    }
+
+    // Legacy arp function (kept for compatibility)
     _playArp(freqs) {
         if (!this.ctx || this.isMuted) return;
         this.resume();
@@ -574,7 +931,7 @@ class SoundManager {
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
             osc.frequency.value = f;
-            osc.type = 'triangle';
+            osc.type = 'sine';
             gain.gain.setValueAtTime(0.1, now + i * 0.1);
             gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.3);
             osc.connect(gain); gain.connect(this.sfxGain);

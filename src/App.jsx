@@ -743,6 +743,7 @@ function App() {
     useEffect(() => {
         if (gameData?.tie) {
             setTieAnimation(true);
+            SoundManager.playTie();
 
             // Clear any existing timer
             if (tieTimerRef.current) clearTimeout(tieTimerRef.current);
@@ -904,6 +905,22 @@ function App() {
             setShowEndScreen(false);
         }
     }, [gameData?.status, showEndScreen]);
+
+    // Play game end music when game ends
+    useEffect(() => {
+        if (gameData?.status === GAME_STATUS.END && myData?.score !== undefined && oppData?.score !== undefined) {
+            // Delay to sync with animation
+            const timer = setTimeout(() => {
+                if (myData.score > oppData.score) {
+                    SoundManager.playGameWin();
+                } else if (myData.score < oppData.score) {
+                    SoundManager.playGameLose();
+                }
+                // If tied, no special end music (already played tie sound during the tie round)
+            }, 800); // After shake phase starts
+            return () => clearTimeout(timer);
+        }
+    }, [gameData?.status, myData?.score, oppData?.score]);
 
     // --- Round Resolution ---
     const resolveRound = () => {
