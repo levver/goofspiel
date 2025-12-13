@@ -43,6 +43,7 @@ export const processGameEndRatings = async (gameId, gameData, hostScore, guestSc
     // Store rating updates in the game object
     const ratingUpdates = {
         host: {
+            name: p1.name || gameData.host.name || 'Unknown',
             gamesPlayed: (p1.gamesPlayed || 0) + 1,
             gamesWon: (p1.gamesWon || 0) + (outcome === 1 ? 1 : 0),
             rating: newP1.rating,
@@ -51,6 +52,7 @@ export const processGameEndRatings = async (gameId, gameData, hostScore, guestSc
             vol: newP1.vol
         },
         guest: {
+            name: p2.name || gameData.guest.name || 'Unknown',
             gamesPlayed: (p2.gamesPlayed || 0) + 1,
             gamesWon: (p2.gamesWon || 0) + (outcome === 0 ? 1 : 0),
             rating: newP2.rating,
