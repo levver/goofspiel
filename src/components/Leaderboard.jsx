@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getLeaderboard } from '../utils/userManager';
 import { Trophy, X } from './Icons';
-import { LOBBY_TEXT } from '../utils/constants';
 
 const Leaderboard = ({ onClose }) => {
     const [players, setPlayers] = useState([]);
