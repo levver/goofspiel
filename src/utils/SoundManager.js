@@ -372,28 +372,34 @@ class SoundManager {
         birdGain.gain.value = 0.02; // Base volume (Quiet)
 
         // Modulate Bird Gain: Inverse of Bass
-        // We want Sine High when LFO is Low (-1).
-        // Gain += LFO * -0.02 ?
-        // If LFO = -1 -> -1 * -0.02 = +0.02 -> Total 0.04 (Peak)
-        // If LFO = 1 -> 1 * -0.02 = -0.02 -> Total 0 (Silent)
         const birdAmpMod = this.ctx.createGain();
         birdAmpMod.gain.value = -0.02;
 
         breathLfo.connect(birdAmpMod);
         birdAmpMod.connect(birdGain.gain);
 
+        // Bird Pitch Modulation (Warble) - Fix "dog whistle" monotone
+        const birdLfo = this.ctx.createOscillator();
+        birdLfo.frequency.value = 4.0; // Fast-ish vibrato
+        const birdLfoGain = this.ctx.createGain();
+        birdLfoGain.gain.value = 15; // +/- 15Hz
+
+        birdLfo.connect(birdLfoGain);
+        birdLfoGain.connect(birdSine.frequency);
+
         birdSine.connect(birdGain);
         birdGain.connect(this.musicGain);
 
         // Start all
-        const nodes = [bass, pad1, pad2, filterLfo, birdSine, breathLfo];
+        // Fix: Removed breathLfo from here because it was already started at the top
+        const nodes = [bass, pad1, pad2, filterLfo, birdSine, birdLfo];
         nodes.forEach(n => n.start());
 
         // Track nodes for cleanup
         this.currentNodes = [
-            bass, pad1, pad2, filterLfo, birdSine, breathLfo,
+            bass, pad1, pad2, filterLfo, birdSine, breathLfo, birdLfo,
             bassGain, padGain, filter, filterLfoGain, birdGain,
-            bassAmpMod, birdAmpMod
+            bassAmpMod, birdAmpMod, birdLfoGain
         ];
     }
 
