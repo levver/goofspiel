@@ -789,25 +789,23 @@ function App() {
         }
     }, [gameData?.status, showEndScreen]);
 
-    // --- Host-Authoritative Round Resolution ---
-    // This function is ONLY called by the Host player.
-    // It calculates the outcome of the round, updates scores, and handles the transition to the next round.
-    // The Guest player simply listens for these updates.
-    const resolveRound = (hostBid, guestBid) => {
+    // --- Round Resolution ---
+    const resolveRound = () => {
         if (!gameData) return;
 
         console.log('[RESOLVE] Starting round resolution', {
             round: gameData.round,
-            hostBid: hostBid,
-            guestBid: guestBid,
+            hostBid: gameData.host.bid,
+            guestBid: gameData.guest.bid,
             prize: gameData.currentPrize,
             currentScores: { host: gameData.host.score, guest: gameData.guest.score }
         });
 
+        const hostBid = gameData.host.bid;
+        const guestBid = gameData.guest.bid;
+
         const prize = gameData.currentPrize;
 
-        let hostScore = gameData.host.score;
-        let guestScore = gameData.guest.score;
         let msg = MESSAGES.TIED;
         let type = "warning";
         const isTie = hostBid === guestBid;

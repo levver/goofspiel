@@ -38,6 +38,9 @@ const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize, 
                     setAnimationPhase('overflow');
                 }, 300); // Shatter duration
             }, 500); // Shake duration
+        } else if (!winner && animationPhase !== null) {
+            // Reset if winner is cleared (e.g. new game start)
+            setAnimationPhase(null);
         }
     }, [winner, animationPhase]);
 
