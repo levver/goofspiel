@@ -44,7 +44,15 @@ export const getUserProfile = async (userId) => {
 
 export const updateUserProfile = async (userId, data) => {
     try {
-        await update(ref(db, `users/${userId}`), data);
+        const updates = {};
+        updates[`users/${userId}`] = data;
+
+        // Mirror to public_profiles for leaderboard
+        // Only include data needed for leaderboard to minimize data leakage if that's a concern
+        // But for now, we'll just mirror the whole profile object as it only contains non-sensitive data
+        updates[`public_profiles/${userId}`] = data;
+
+        await update(ref(db), updates);
     } catch (error) {
         console.error("Error updating user profile:", error);
     }
@@ -52,7 +60,7 @@ export const updateUserProfile = async (userId, data) => {
 
 export const getLeaderboard = async () => {
     try {
-        const usersRef = ref(db, 'users');
+        const usersRef = ref(db, 'public_profiles');
         const q = query(usersRef, orderByChild('rating'), limitToLast(10));
         const snapshot = await get(q);
 
