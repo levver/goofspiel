@@ -64,8 +64,20 @@ export const processGameEndRatings = async (gameId, gameData, hostScore, guestSc
     await update(ref(db), updates);
 
     // Also update the users' profiles directly here to ensure consistency
-    await updateUserProfile(hostId, ratingUpdates.host);
-    await updateUserProfile(guestId, ratingUpdates.guest);
+    // Also update the users' profiles directly here to ensure consistency
+    // Use allSettled to ensure both define attempts run
+    const results = await Promise.allSettled([
+        updateUserProfile(hostId, ratingUpdates.host),
+        updateUserProfile(guestId, ratingUpdates.guest)
+    ]);
+
+    results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+            console.error(`[RATING] Failed to update profile for ${index === 0 ? 'host' : 'guest'}:`, result.reason);
+        }
+    });
+
+    console.log('[RATING] Processed ratings:', ratingUpdates);
 
     return ratingUpdates;
 };
@@ -75,8 +87,8 @@ export const resolveGame = async (gameId, gameData) => {
 
     const host = gameData.host;
     const guest = gameData.guest;
-    let hostScore = host.score;
-    let guestScore = guest.score;
+    const hostScore = parseInt(host.score || 0, 10);
+    const guestScore = parseInt(guest.score || 0, 10);
 
     const hostLastSeen = gameData.presence?.host?.lastSeen || gameData.presence?.host?.disconnectedAt || 0;
     const guestLastSeen = gameData.presence?.guest?.lastSeen || gameData.presence?.guest?.disconnectedAt || 0;
