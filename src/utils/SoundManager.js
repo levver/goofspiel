@@ -174,13 +174,28 @@ class SoundManager {
         }
 
         // --- 3. SUSPENSE ATMOSPHERE (Randomized Arpeggios) ---
-        // Play every ~3-5 seconds (randomized logic inside scheduler?)
-        // Or keep fixed interval but random content. Fixed interval is easier for now.
         if (this.stepCounter % 48 === 0) {
             this._playRandomAtmosphere(time);
         }
 
-        // --- 4. NEW TEXTURE: Glitch Shimmer (High Freq Texture) ---
+        // --- 4. MAIN THEME (Jazzy/Blade Runner Structure) ---
+        // Consistent 4-bar loop (64 steps)
+        // D Phrygian Noir: D, F, G, A, Bb, C, Eb, D
+        const loopStep = this.stepCounter % 64;
+
+        // Melody Map: { step: frequency }
+        // Syncopated, sparse phrasing
+        if (loopStep === 0) this._playStaccatoVoice(time, 146.83); // D3
+        if (loopStep === 12) this._playStaccatoVoice(time, 174.61); // F3
+        if (loopStep === 18) this._playStaccatoVoice(time, 196.00); // G3
+        if (loopStep === 24) this._playStaccatoVoice(time, 220.00); // A3 (Target)
+
+        if (loopStep === 32) this._playStaccatoVoice(time, 233.08); // Bb3
+        if (loopStep === 44) this._playStaccatoVoice(time, 220.00); // A3
+        if (loopStep === 52) this._playStaccatoVoice(time, 311.13); // Eb4 (The "Blade Runner" tension note)
+        if (loopStep === 58) this._playStaccatoVoice(time, 293.66); // D4
+
+        // --- 5. NEW TEXTURE: Glitch Shimmer (High Freq Texture) ---
         // Play on odd 8th notes to offset the kick/bass interaction
         if (beatNumber % 4 === 2) {
             this._playGlitchTexture(time);
@@ -230,6 +245,32 @@ class SoundManager {
         gain.connect(this.musicGain);
 
         noise.start(time);
+    }
+
+    // Reuse synth logic for both Random Atmpsphere and Main Theme
+    _playStaccatoVoice(time, freq) {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.value = freq;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        const startCutoff = 200 + Math.random() * 200; // Slight organic variation
+        const endCutoff = 1500 + Math.random() * 500;
+        filter.frequency.setValueAtTime(startCutoff, time);
+        filter.frequency.exponentialRampToValueAtTime(endCutoff, time + 1.0);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.15, time + 0.05); // Fast attack (Staccato)
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3); // Short decay
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.musicGain);
+
+        osc.start(time);
+        osc.stop(time + 0.35);
     }
 
     _playHiHat(time, isOpen) {
@@ -283,48 +324,21 @@ class SoundManager {
     }
 
     _playRandomAtmosphere(time) {
-        // D Phrygian Scale pool: D2, Eb2, F2, G2, A2, Bb2, C3, D3
-        // Selecting a subset to create a random eerie phrase
+        // D Phrygian Scale
         const scale = [73.42, 77.78, 87.31, 98.00, 110.00, 116.54, 130.81, 146.83];
 
-        // Pick 3 to 5 random notes
         const noteCount = 3 + Math.floor(Math.random() * 3);
         const selectedFreqs = [];
         for (let i = 0; i < noteCount; i++) {
             selectedFreqs.push(scale[Math.floor(Math.random() * scale.length)]);
         }
 
-        // Play them with random timing offsets
         let currentOffset = 0;
         selectedFreqs.forEach((f) => {
             // "Space staccato notes closer together"
             const spacing = 0.1 + Math.random() * 0.15; // Tight bursts
             currentOffset += spacing;
-            const t = time + currentOffset;
-
-            const osc = this.ctx.createOscillator();
-            osc.type = 'sawtooth';
-            osc.frequency.value = f;
-
-            const filter = this.ctx.createBiquadFilter();
-            filter.type = 'lowpass';
-            // Random filter movement for organic feel
-            const startCutoff = 200 + Math.random() * 200;
-            const endCutoff = 1500 + Math.random() * 2000;
-            filter.frequency.setValueAtTime(startCutoff, t);
-            filter.frequency.exponentialRampToValueAtTime(endCutoff, t + 2.0);
-
-            const gain = this.ctx.createGain();
-            gain.gain.setValueAtTime(0, t);
-            gain.gain.linearRampToValueAtTime(0.15, t + 0.05); // Fast attack (Staccato)
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3); // Short decay
-
-            osc.connect(filter);
-            filter.connect(gain);
-            gain.connect(this.musicGain);
-
-            osc.start(t);
-            osc.stop(t + 0.35);
+            this._playStaccatoVoice(time + currentOffset, f);
         });
     }
 
