@@ -189,11 +189,11 @@ class SoundManager {
         if (loopStep === 1) this._playStaccatoVoice(time, 174.61); // F3
         if (loopStep === 2) this._playStaccatoVoice(time, 196.00); // G3
         if (loopStep === 3) this._playStaccatoVoice(time, 220.00); // A3 (Target)
-
         if (loopStep === 5) this._playStaccatoVoice(time, 233.08); // Bb3
         if (loopStep === 6) this._playStaccatoVoice(time, 220.00); // A3
         if (loopStep === 7) this._playStaccatoVoice(time, 311.13); // Eb4 (The "Blade Runner" tension note)
         if (loopStep === 8) this._playStaccatoVoice(time, 293.66); // D4
+        if (loopStep === 9) this._playLongNote(time, 311.13, 4); // Eb4 (The "Blade Runner" tension note)
 
         // --- 5. NEW TEXTURE: Glitch Shimmer (High Freq Texture) ---
         // Play on odd 8th notes to offset the kick/bass interaction
@@ -323,23 +323,29 @@ class SoundManager {
         osc.stop(time + duration);
     }
 
-    _playRandomAtmosphere(time) {
-        // D Phrygian Scale
-        const scale = [73.42, 77.78, 87.31, 98.00, 110.00, 116.54, 130.81, 146.83];
+    _playLongNote(time, freq, beats) {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
 
-        const noteCount = 3 + Math.floor(Math.random() * 3);
-        const selectedFreqs = [];
-        for (let i = 0; i < noteCount; i++) {
-            selectedFreqs.push(scale[Math.floor(Math.random() * scale.length)]);
-        }
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        const startCutoff = 200 + Math.random() * 200; // Slight organic variation
+        const endCutoff = 1500 + Math.random() * 500;
+        filter.frequency.setValueAtTime(startCutoff, time);
+        filter.frequency.exponentialRampToValueAtTime(endCutoff, time + beats);
 
-        let currentOffset = 0;
-        selectedFreqs.forEach((f) => {
-            // "Space staccato notes closer together"
-            const spacing = 0.1 + Math.random() * 0.15; // Tight bursts
-            currentOffset += spacing;
-            this._playStaccatoVoice(time + currentOffset, f);
-        });
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.15, time + 0.05); // Fast attack (Staccato)
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3 * beats); // Short decay
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.musicGain);
+
+        osc.start(time);
+        osc.stop(time + 0.35);
     }
 
     _playArpTone(time, freq) {
