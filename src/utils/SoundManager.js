@@ -151,7 +151,7 @@ class SoundManager {
 
         this.current16thNote++;
         this.stepCounter++;
-        if (this.current16thNote === 16) {
+        if (this.current16thNote === 12) {
             this.current16thNote = 0;
         }
     }
