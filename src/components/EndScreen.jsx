@@ -13,9 +13,13 @@ const EndScreen = ({
     const [displayRating, setDisplayRating] = useState(ratingUpdate ? ratingUpdate.previousRating : null);
     const [ratingChange, setRatingChange] = useState(0);
     const [showThump, setShowThump] = useState(false);
+    const hasAnimated = useRef(false);
 
     useEffect(() => {
         if (!ratingUpdate || !ratingUpdate.previousRating || !ratingUpdate.rating) return;
+        if (hasAnimated.current) return;
+
+        hasAnimated.current = true; // Mark as animated
 
         const start = ratingUpdate.previousRating;
         const end = ratingUpdate.rating;
@@ -79,7 +83,7 @@ const EndScreen = ({
                         </div>
                         {showThump && ratingChange !== 0 && (
                             <div className={`text-sm font-bold animate-fade-in-up ${ratingChange > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                {ratingChange > 0 ? '+' : ''}{ratingChange}
+                                {ratingChange > 0 ? '+' : ''}{Math.round(ratingChange)}
                             </div>
                         )}
                     </div>

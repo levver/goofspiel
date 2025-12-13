@@ -985,7 +985,8 @@ function App() {
                 }
 
                 // Handle Game End (Rating Updates) - Only Host runs this
-                handleGameEnd(hostScore, guestScore);
+                // REMOVED: Rely on useEffect to trigger this when status becomes END
+                // handleGameEnd(hostScore, guestScore);
             }
 
             console.log('[RESOLVE] Sending next round updates', nextUpdates);
