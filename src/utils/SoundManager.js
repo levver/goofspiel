@@ -151,7 +151,7 @@ class SoundManager {
 
         this.current16thNote++;
         this.stepCounter++;
-        if (this.current16thNote === 12) {
+        if (this.current16thNote === 16) {
             this.current16thNote = 0;
         }
     }
@@ -181,7 +181,7 @@ class SoundManager {
         // --- 4. MAIN THEME (Jazzy/Blade Runner Structure) ---
         // Consistent 4-bar loop (64 steps)
         // D Phrygian Noir: D, F, G, A, Bb, C, Eb, D
-        const loopStep = this.stepCounter % 64;
+        const loopStep = this.stepCounter % 32;
 
         // Melody Map: { step: frequency }
         // Syncopated, sparse phrasing
