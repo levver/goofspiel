@@ -18,7 +18,7 @@ class SoundManager {
         this.isPlaying = false;
         this.nextNoteTime = 0.0;
         this.current16thNote = 0;
-        this.tempo = 125.0; // Increased energy
+        this.tempo = 160.0; // Increased energy
         this.lookahead = 25.0; // ms
         this.scheduleAheadTime = 0.1; // s
         this.timerID = null;
@@ -167,21 +167,21 @@ class SoundManager {
         }
 
         // --- 3. BASS (User Pattern: Poly 3s, Darker Tone) ---
-        // E Phrygian Bass: E F G A B C D
-        // Root (E) -> Flat 2nd (F) for tension
+        // D Phrygian Bass: D Eb F G A Bb C
+        // Root (D) -> Flat 2nd (Eb) for tension
         if (beatNumber % 3 === 0) {
-            // Trigger root E or F for tension
-            const note = (beatNumber < 8) ? 82.41 : 87.31; // E2 vs F2 (Minor 2nd interval = Tension)
+            // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
+            const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
             this._playBass(time, note, 0.15); // Slightly longer sustain
         }
 
         // --- 4. ARP / LEAD (Dark/Suspenseful) ---
         // User Pattern
-        const arpPattern = [1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0];
+        const arpPattern = [1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0];
         if (arpPattern[beatNumber]) {
-            // Dark "Cyber Fight" Scale (E Phrygian/Locrian hybrid)
-            // E, F, G, Bb, B (0, 1, 3, 6, 7 semitones)
-            const scale = [329.63, 349.23, 392.00, 466.16, 493.88];
+            // D Phrygian Scale (Shifted down 2 semitones)
+            // D, Eb, F, Ab, A
+            const scale = [293.66, 311.13, 349.23, 415.30, 440.00];
             const pitch = scale[Math.floor(Math.random() * scale.length)];
             this._playArpTone(time, pitch);
         }
@@ -290,15 +290,15 @@ class SoundManager {
 
     _playMenuDrone() {
         // 1. Deep Bass Drone
-        const bass = this._createOsc('triangle', 36.71, 0); // Low D
+        const bass = this._createOsc('triangle', 32.70, 0); // Low C (Shifted down 2 semitones)
         const bassGain = this.ctx.createGain();
         bassGain.gain.value = 0.2;
         bass.connect(bassGain);
         bassGain.connect(this.musicGain);
 
         // 2. Swelling Pad
-        const pad1 = this._createOsc('sawtooth', 146.83, 10); // D3 detuned
-        const pad2 = this._createOsc('sawtooth', 147.83, -10); // D3 detuned
+        const pad1 = this._createOsc('sawtooth', 130.81, 10); // C3 detuned
+        const pad2 = this._createOsc('sawtooth', 131.81, -10); // C3 detuned
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
@@ -396,8 +396,8 @@ class SoundManager {
         bs.start();
     }
 
-    playWin() { this._playArp([523.25, 659.25, 783.99, 1046.50]); }
-    playLose() { this._playArp([440, 415.30, 392.00, 370]); }
+    playWin() { this._playArp([466.16, 587.33, 698.46, 932.33]); } // Bb Major
+    playLose() { this._playArp([392.00, 370.00, 349.23, 329.63]); } // G Descending
 
     _playArp(freqs) {
         if (!this.ctx || this.isMuted) return;
