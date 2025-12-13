@@ -250,6 +250,7 @@ function App() {
         // Send heartbeat every 5 seconds
         // IMPORTANT: Use localTimeRef.current to avoid resetting the interval when time changes
         const heartbeatInterval = setInterval(() => {
+            console.log('[HEARTBEAT] Sending heartbeat. Time:', localTimeRef.current);
             sendHeartbeat(gameId, playerId, localTimeRef.current);
         }, TIMINGS.HEARTBEAT_INTERVAL);
 
@@ -428,6 +429,8 @@ function App() {
                 // Opponent timer: Tick if THEY haven't bid
                 if (!oppBid) {
                     setOppLocalTime(t => Math.max(0, t - 1));
+                } else {
+                    console.log('[TIMER] Opponent has bid, timer paused. Bid:', oppBid);
                 }
             }, 1000);
         }
@@ -886,6 +889,9 @@ function App() {
         let msg = MESSAGES.TIED;
         let type = "warning";
         const isTie = hostBid === guestBid;
+
+        let hostScore = gameData.host.score;
+        let guestScore = gameData.guest.score;
 
         if (hostBid > guestBid) {
             hostScore += prize;
