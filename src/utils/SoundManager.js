@@ -160,28 +160,29 @@ class SoundManager {
         // beatNumber is 0..15 (one bar of 16th notes)
 
         // --- 1. KICK (User Pattern: 4s) ---
-        if (this.stepCounter % 4 === 0) {
-            this._playKick(time);
+        if (this.stepCounter % 64 > 11 && this.stepCounter % 4 === 0 && this.stepCounter % 64 < 50) {
+            this._playKick(time, 0.2);
         }
+
+        // Play on odd 8th notes to offset the kick/bass interaction
+        if (this.stepCounter % 64 < 11 && this.stepCounter % 4 === 0 && this.stepCounter % 64 < 50) {
+            this._playGlitchTexture(time);
+        }
+
 
         // --- 2. BASS (User Pattern: Poly 3s, Darker Tone) ---
         // D Phrygian Bass: D Eb F G A Bb C
         // Root (D) -> Flat 2nd (Eb) for tension
-        // if (this.stepCounter < 3 || this.stepCounter === 5) {
+        // if (this.stepCounter % 9 === 0) {
         //     // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
-        //     const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
-        //     this._playBass(time, note, 0.15); // Slightly longer sustain
+        //     this._playBass(time, 220.00, 0.1); // Slightly longer sustain
         // }
 
-        // --- 3. SUSPENSE ATMOSPHERE (Randomized Arpeggios) ---
-        // if (this.stepCounter % 48 === 0) {
-        //     this._playRandomAtmosphere(time);
-        // }
 
         // --- 4. MAIN THEME (Jazzy/Blade Runner Structure) ---
         // Consistent 4-bar loop (64 steps)
         // D Phrygian Noir: D, F, G, A, Bb, C, Eb, D
-        const loopStep = this.stepCounter % 32;
+        const loopStep = this.stepCounter % 64;
 
         // Melody Map: { step: frequency }
         // Syncopated, sparse phrasing
@@ -193,26 +194,59 @@ class SoundManager {
         if (loopStep === 6) this._playStaccatoVoice(time, 220.00); // A3
         if (loopStep === 7) this._playStaccatoVoice(time, 311.13); // Eb4 (The "Blade Runner" tension note)
         if (loopStep === 8) this._playStaccatoVoice(time, 293.66); // D4
-        if (loopStep === 9) this._playLongNote(time, 311.13, 4); // Eb4 (The "Blade Runner" tension note)
-
-        // --- 5. NEW TEXTURE: Glitch Shimmer (High Freq Texture) ---
-        // Play on odd 8th notes to offset the kick/bass interaction
-        if (beatNumber % 7 === 1) {
-            this._playGlitchTexture(time);
-        }
+        // Stop
+        if (loopStep === 12) this._playStaccatoVoice(time, 196.00); // G3
+        if (loopStep === 13) this._playStaccatoVoice(time, 220.00); // A3 (Target)
+        if (loopStep === 14) this._playStaccatoVoice(time, 233.08); // Bb3
+        if (loopStep === 15) this._playStaccatoVoice(time, 196.00); // G3
+        if (loopStep === 16) this._playStaccatoVoice(time, 311.13); // Eb4 (The "Blade Runner" tension note)
+        if (loopStep === 17) this._playStaccatoVoice(time, 233.08); // Bb3
+        if (loopStep === 18) this._playStaccatoVoice(time, 220.00); // A3 (Target)
+        if (loopStep === 19) this._playStaccatoVoice(time, 233.08); // Bb3
+        if (loopStep === 20) this._playStaccatoVoice(time, 196.00); // G3
+        if (loopStep === 21) this._playStaccatoVoice(time, 220.00); // A3 (Target)
+        if (loopStep === 22) this._playStaccatoVoice(time, 233.08); // Bb3
+        if (loopStep === 23) this._playStaccatoVoice(time, 196.00); // G3
+        if (loopStep === 24) this._playStaccatoVoice(time, 220.00); // A3 (Target)
+        if (loopStep === 25) this._playStaccatoVoice(time, 311.13); // Eb4 (The "Blade Runner" tension note)
+        if (loopStep === 26) this._playStaccatoVoice(time, 220.00); // A3 (Target)
+        if (loopStep === 27) this._playStaccatoVoice(time, 233.08); // Bb3
+        if (loopStep === 28) this._playLongNote(time, 220.00, 1); // A3 (Target)
+        // Stop
+        if (loopStep === 33) this._playStaccatoVoice(time, 146.83); // D3
+        if (loopStep === 34) this._playStaccatoVoice(time, 174.61); // F3
+        if (loopStep === 35) this._playStaccatoVoice(time, 196.00); // G3
+        if (loopStep === 36) this._playStaccatoVoice(time, 220.00); // A3 (Target)
+        if (loopStep === 37) this._playStaccatoVoice(time, 233.08); // Bb3
+        if (loopStep === 38) this._playStaccatoVoice(time, 220.00); // A3
+        if (loopStep === 39) this._playLongNote(time, 311.13, 1); // Eb4 (The "Blade Runner" tension note)
+        if (loopStep === 43) this._playLongNote(time, 293.66, 1); // D4
+        if (loopStep === 47) this._playLongNote(time, 233.08, 1); // Bb3
+        //Stop
+        if (loopStep === 51) this._playStaccatoVoice(time, 293.66); // A3
+        if (loopStep === 52) this._playStaccatoVoice(time, 146.83); // D3
+        if (loopStep === 53) this._playStaccatoVoice(time, 174.61); // F3
+        if (loopStep === 54) this._playStaccatoVoice(time, 196.00); // G3
+        if (loopStep === 55) this._playStaccatoVoice(time, 220.00); // A3 (Target)
+        if (loopStep === 56) this._playStaccatoVoice(time, 311.13); // Eb4 (The "Blade Runner" tension note)
+        if (loopStep === 57) this._playStaccatoVoice(time, 293.66); // D4
+        if (loopStep === 58) this._playStaccatoVoice(time, 146.83); // D3
+        if (loopStep === 59) this._playStaccatoVoice(time, 174.61); // F3
+        if (loopStep === 60) this._playStaccatoVoice(time, 196.00); // G3
+        if (loopStep === 61) this._playStaccatoVoice(time, 220.00); // A3 (Target)
     }
 
 
     // --- INSTRUMENTS ---
 
-    _playKick(time) {
+    _playKick(time, gainVol) {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
 
         // Softer kick (lower start freq, balanced mix)
         osc.frequency.setValueAtTime(120, time); // Was 180 (Less "clicky")
         osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.4);
-        gain.gain.setValueAtTime(0.4, time); // Was 0.8 (Much quieter)
+        gain.gain.setValueAtTime(gainVol, time); // Was 0.8 (Much quieter)
         gain.gain.exponentialRampToValueAtTime(0.01, time + 0.4);
 
         osc.connect(gain);
@@ -307,13 +341,13 @@ class SoundManager {
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.Q.value = 2; // Was 5 (Less synthetic/resonant bite)
-        filter.frequency.setValueAtTime(freq * 4, time); // Was * 8 (Softer sweep)
-        filter.frequency.exponentialRampToValueAtTime(freq, time + duration); // Filter sweep down
+        filter.Q.value = 1; // Was 5 (Less synthetic/resonant bite)
+        filter.frequency.setValueAtTime(freq, time); // Was * 8 (Softer sweep)
+        filter.frequency.exponentialRampToValueAtTime(freq * 0.5, time + duration); // Filter sweep down
 
         const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(0.5, time);
-        gain.gain.linearRampToValueAtTime(0, time + duration); // Plucky envelope
+        gain.gain.setValueAtTime(0.025, time);
+        gain.gain.linearRampToValueAtTime(0.5, time + duration); // Plucky envelope
 
         osc.connect(filter);
         filter.connect(gain);
@@ -338,14 +372,13 @@ class SoundManager {
         const gain = this.ctx.createGain();
         gain.gain.setValueAtTime(0, time);
         gain.gain.linearRampToValueAtTime(0.15, time + 0.05); // Fast attack (Staccato)
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3 * beats); // Short decay
+        gain.gain.linearRampToValueAtTime(0, time + beats); // decay
 
         osc.connect(filter);
+        osc.start(time);
+        osc.stop(time + beats);
         filter.connect(gain);
         gain.connect(this.musicGain);
-
-        osc.start(time);
-        osc.stop(time + 0.35);
     }
 
     _playArpTone(time, freq) {

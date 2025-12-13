@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,7 +12,11 @@
             --accent: #e94560;
             --text: #eee;
         }
-        * { box-sizing: border-box; }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Segoe UI', sans-serif;
             background: var(--bg);
@@ -20,9 +25,22 @@
             padding: 2rem;
             min-height: 100vh;
         }
-        h1 { color: var(--accent); margin-bottom: 1rem; }
-        h2 { border-bottom: 1px solid var(--accent); padding-bottom: 0.5rem; margin-top: 2rem; }
-        .section { margin-bottom: 2rem; }
+
+        h1 {
+            color: var(--accent);
+            margin-bottom: 1rem;
+        }
+
+        h2 {
+            border-bottom: 1px solid var(--accent);
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        .section {
+            margin-bottom: 2rem;
+        }
+
         button {
             background: var(--surface);
             border: 1px solid var(--accent);
@@ -34,13 +52,16 @@
             font-size: 1rem;
             transition: all 0.2s;
         }
+
         button:hover {
             background: var(--accent);
             transform: translateY(-2px);
         }
+
         button:active {
             transform: translateY(0);
         }
+
         .status {
             padding: 1rem;
             background: var(--surface);
@@ -48,14 +69,26 @@
             font-family: monospace;
             margin-top: 1rem;
         }
+
         .log {
             max-height: 200px;
             overflow-y: auto;
             font-size: 0.85rem;
         }
-        .log-entry { padding: 0.25rem 0; border-bottom: 1px solid #333; }
-        .log-entry.info { color: #7ee787; }
-        .log-entry.warn { color: #f0883e; }
+
+        .log-entry {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .log-entry.info {
+            color: #7ee787;
+        }
+
+        .log-entry.warn {
+            color: #f0883e;
+        }
+
         #hmr-indicator {
             position: fixed;
             top: 1rem;
@@ -67,9 +100,13 @@
             opacity: 0;
             transition: opacity 0.3s;
         }
-        #hmr-indicator.show { opacity: 1; }
+
+        #hmr-indicator.show {
+            opacity: 1;
+        }
     </style>
 </head>
+
 <body>
     <div id="hmr-indicator">🔄 HMR Updated!</div>
 
@@ -81,6 +118,7 @@
 
     <div class="section">
         <h2>Core Controls</h2>
+        <button id="btn-reload" style="background: #e94560;">🔄 Reload Module</button>
         <button id="btn-init">Initialize / Resume</button>
         <button id="btn-mute">Mute</button>
         <button id="btn-unmute">Unmute</button>
@@ -108,10 +146,7 @@
     </div>
 
     <script type="module">
-        // Import SoundManager directly from src
         import SoundManager from './src/utils/SoundManager.js';
-
-        // Make it global for console debugging
         window.SoundManager = SoundManager;
 
         const statusEl = document.getElementById('status');
@@ -133,11 +168,10 @@
             }
         }
 
-        // Wrap all calls to log and update status
         function wrapAction(name, fn) {
-            return () => {
+            return async () => {
                 try {
-                    fn();
+                    await fn();
                     log(`${name} executed.`);
                 } catch (e) {
                     log(`${name} FAILED: ${e.message}`, 'warn');
@@ -145,6 +179,13 @@
                 updateStatus();
             };
         }
+
+        // Force fresh module fetch by navigating to URL with timestamp
+        document.getElementById('btn-reload').onclick = () => {
+            SoundManager.stopMusic();
+            if (SoundManager.ctx) SoundManager.ctx.close();
+            window.location.href = window.location.pathname + '?t=' + Date.now();
+        };
 
         document.getElementById('btn-init').onclick = wrapAction('resume()', () => SoundManager.resume());
         document.getElementById('btn-mute').onclick = wrapAction('mute(true)', () => SoundManager.mute(true));
@@ -158,20 +199,9 @@
         document.getElementById('btn-win').onclick = wrapAction('playWin()', () => SoundManager.playWin());
         document.getElementById('btn-lose').onclick = wrapAction('playLose()', () => SoundManager.playLose());
 
-        log('Debug console loaded. Click "Initialize / Resume" to start.');
+        log('Debug console ready. Click "Initialize / Resume" to start audio.');
         updateStatus();
-
-        // Vite HMR support
-        if (import.meta.hot) {
-            import.meta.hot.accept('./src/utils/SoundManager.js', (newModule) => {
-                log('🔄 SoundManager module updated via HMR!');
-                hmrIndicator.classList.add('show');
-                setTimeout(() => hmrIndicator.classList.remove('show'), 2000);
-                // Note: The singleton instance won't fully hot-reload without re-initializing.
-                // For a full restart, click Stop then Start again after HMR.
-                updateStatus();
-            });
-        }
     </script>
 </body>
+
 </html>
