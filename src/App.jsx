@@ -908,7 +908,7 @@ function App() {
     };
 
     const handleOpponentDisconnect = async () => {
-        if (playerId !== ROLES.HOST) return; // Only host ends the game
+        // Removed host-only check to allow guest to claim win if host drops
 
         console.log('[DISCONNECT] Ending game due to opponent disconnect');
 
@@ -939,7 +939,19 @@ function App() {
     };
 
     const handleGameEnd = async (hostScore, guestScore) => {
-        if (playerId !== ROLES.HOST) return;
+        // Race condition handling:
+        // If I am Guest, I should ONLY calculate ratings if the Host has been disconnected for the timeout duration.
+        // Otherwise, I should let the Host handle it to avoid double-writes or race conditions.
+        if (playerId !== ROLES.HOST) {
+            const hostPresence = gameData?.presence?.host;
+            const disconnectTime = hostPresence?.disconnectedAt;
+            const isHostOffline = !hostPresence?.online;
+
+            if (!isHostOffline || !disconnectTime || (Date.now() - disconnectTime < TIMINGS.DISCONNECT_TIMEOUT)) {
+                console.log('[RATING] Guest skipping rating calculation (Host is active or not timed out)');
+                return;
+            }
+        }
 
         const hostId = gameData.host.id;
         const guestId = gameData.guest.id;
