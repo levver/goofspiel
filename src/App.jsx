@@ -81,7 +81,7 @@ function App() {
     useEffect(() => {
         // Initialize audio on first user interaction if possible, or just rely on lazy init
         const handleInteraction = () => {
-            SoundManager.init();
+            SoundManager.resume();
             window.removeEventListener('click', handleInteraction);
         };
         window.addEventListener('click', handleInteraction);

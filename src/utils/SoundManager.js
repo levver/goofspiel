@@ -8,6 +8,10 @@ class SoundManager {
         this.currentMusicNodes = [];
         this.isMuted = false;
         this.initialized = false;
+
+        // Track state specifically for autoplay policy
+        this.targetTrack = null; // 'menu', 'game', or null
+        this.currentTrack = null; // 'menu', 'game', or null
     }
 
     init() {
@@ -34,17 +38,22 @@ class SoundManager {
 
             this.initialized = true;
             console.log("SoundManager initialized");
+
+            // Try to sync state immediately (in case ctx is already running)
+            this._updateMusicState();
         } catch (e) {
             console.error("Web Audio API not supported", e);
         }
     }
 
-    // Helper to ensure context is running (browser policy)
     async resume() {
         if (!this.ctx) this.init();
         if (this.ctx && this.ctx.state === 'suspended') {
             await this.ctx.resume();
+            console.log("SoundManager resumed");
         }
+        // Force update state after resume
+        this._updateMusicState();
     }
 
     mute(mute) {
@@ -55,18 +64,136 @@ class SoundManager {
     }
 
     stopMusic() {
+        this.targetTrack = null;
+        this._updateMusicState();
+    }
+
+    startMenuMusic() {
+        if (this.targetTrack === 'menu') return; // Already requested
+        this.targetTrack = 'menu';
+        this._updateMusicState();
+    }
+
+    startGameMusic() {
+        if (this.targetTrack === 'game') return; // Already requested
+        this.targetTrack = 'game';
+        this._updateMusicState();
+    }
+
+    // Central State Machine for Background Music
+    _updateMusicState() {
+        // 1. Prerequisites
+        if (!this.ctx || this.isMuted) return;
+        if (this.ctx.state === 'suspended') return; // Cannot play yet
+
+        // 2. No Change Needed
+        if (this.currentTrack === this.targetTrack) return;
+
+        console.log(`[SoundManager] Switching track: ${this.currentTrack} -> ${this.targetTrack}`);
+
+        // 3. Stop Current
         this.currentMusicNodes.forEach(node => {
             try {
-                node.stop();
-                node.disconnect();
+                // Ramp down before stopping to avoid clicks
+                if (node.gain) {
+                    node.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
+                }
+                node.stop(this.ctx.currentTime + 0.1);
+                setTimeout(() => {
+                    try { node.disconnect(); } catch (e) { /* ignore */ }
+                }, 200);
             } catch (e) { /* ignore */ }
         });
         this.currentMusicNodes = [];
+        this.currentTrack = null;
+
+        // 4. Start Target
+        if (this.targetTrack === 'menu') {
+            this._generateMenuMusic();
+            this.currentTrack = 'menu';
+        } else if (this.targetTrack === 'game') {
+            this._generateGameMusic();
+            this.currentTrack = 'game';
+        }
     }
 
-    // --- PROCEDURAL GENERATORS ---
 
-    // 1. Hover: High pitch blip
+    // --- GENERATORS ---
+
+    _generateMenuMusic() {
+        // Menu: Dark, moody, retro drone
+        const osc1 = this.ctx.createOscillator();
+        osc1.type = 'sawtooth';
+        osc1.frequency.value = 55; // Low A
+
+        const filter1 = this.ctx.createBiquadFilter();
+        filter1.type = 'lowpass';
+        filter1.frequency.value = 400;
+
+        // LFO for filter
+        const lfo = this.ctx.createOscillator();
+        lfo.frequency.value = 0.1; // Slow
+        const lfoGain = this.ctx.createGain();
+        lfoGain.gain.value = 200;
+        lfo.connect(lfoGain);
+        lfoGain.connect(filter1.frequency);
+
+        const gain1 = this.ctx.createGain();
+        gain1.gain.value = 0.0; // Start silent for fade in
+        gain1.gain.setTargetAtTime(0.15, this.ctx.currentTime, 2); // Fade in
+
+        osc1.connect(filter1);
+        filter1.connect(gain1);
+        gain1.connect(this.musicGain);
+
+        osc1.start();
+        lfo.start();
+
+        this.currentMusicNodes.push(osc1, lfo, gain1, filter1, lfoGain);
+    }
+
+    _generateGameMusic() {
+        // Game: Drone + Arp Textures
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.value = 110;
+
+        const mod = this.ctx.createOscillator();
+        mod.frequency.value = 220;
+        const modGain = this.ctx.createGain();
+        modGain.gain.value = 50;
+
+        mod.connect(modGain);
+        modGain.connect(osc.frequency);
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+
+        const lfo = this.ctx.createOscillator();
+        lfo.frequency.value = 2;
+        const lfoG = this.ctx.createGain();
+        lfoG.gain.value = 1000;
+
+        lfo.connect(lfoG);
+        lfoG.connect(filter.frequency);
+
+        const mGain = this.ctx.createGain();
+        mGain.gain.value = 0.0; // Silent start
+        mGain.gain.setTargetAtTime(0.1, this.ctx.currentTime, 1); // Fast fade in
+
+        osc.connect(filter);
+        filter.connect(mGain);
+        mGain.connect(this.musicGain);
+
+        osc.start();
+        mod.start();
+        lfo.start();
+
+        this.currentMusicNodes.push(osc, mod, lfo, osc, mGain, filter, lfoG, modGain);
+    }
+
+    // --- SFX ---
+
     playHover() {
         if (!this.ctx || this.isMuted) return;
         this.resume();
@@ -88,7 +215,6 @@ class SoundManager {
         osc.stop(this.ctx.currentTime + 0.05);
     }
 
-    // 2. Click/Action: Retro "Select" sound
     playClick() {
         if (!this.ctx || this.isMuted) return;
         this.resume();
@@ -110,13 +236,11 @@ class SoundManager {
         osc.stop(this.ctx.currentTime + 0.1);
     }
 
-    // 3. Card Animation: Whoosh/Slide
     playCardSlide() {
         if (!this.ctx || this.isMuted) return;
         this.resume();
 
-        // White noise buffer
-        const bufferSize = this.ctx.sampleRate * 0.2; // 0.2s
+        const bufferSize = this.ctx.sampleRate * 0.2;
         const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
         const data = buffer.getChannelData(0);
         for (let i = 0; i < bufferSize; i++) {
@@ -143,11 +267,11 @@ class SoundManager {
     }
 
     playWin() {
-        this._playArp([523.25, 659.25, 783.99, 1046.50]); // C Major
+        this._playArp([523.25, 659.25, 783.99, 1046.50]);
     }
 
     playLose() {
-        this._playArp([440, 415.30, 392.00, 370]); // Descending chromatic ish
+        this._playArp([440, 415.30, 392.00, 370]);
     }
 
     _playArp(freqs) {
@@ -171,117 +295,6 @@ class SoundManager {
             osc.start(now + i * 0.1);
             osc.stop(now + i * 0.1 + 0.3);
         });
-    }
-
-    // --- MUSIC GENERATORS ---
-
-    // Menu: Dark, moody, retro drone
-    startMenuMusic() {
-        if (!this.ctx || this.isMuted) return;
-
-        // Don't restart if already playing something? No, we need to switch tracks.
-        // Usually we'd track "currentTrack" but since we generate, we just stop and start.
-        this.stopMusic();
-        this.resume();
-
-        // Drone Oscillator 1
-        const osc1 = this.ctx.createOscillator();
-        osc1.type = 'sawtooth';
-        osc1.frequency.value = 55; // Low A
-
-        const filter1 = this.ctx.createBiquadFilter();
-        filter1.type = 'lowpass';
-        filter1.frequency.value = 400;
-
-        // LFO for filter
-        const lfo = this.ctx.createOscillator();
-        lfo.frequency.value = 0.1; // Slow
-        const lfoGain = this.ctx.createGain();
-        lfoGain.gain.value = 200; // Modulate filter by +/- 200Hz
-        lfo.connect(lfoGain);
-        lfoGain.connect(filter1.frequency);
-
-        const gain1 = this.ctx.createGain();
-        gain1.gain.value = 0.15;
-
-        osc1.connect(filter1);
-        filter1.connect(gain1);
-        gain1.connect(this.musicGain);
-
-        osc1.start();
-        lfo.start();
-
-        this.currentMusicNodes.push(osc1, lfo, gain1, filter1, lfoGain);
-    }
-
-    // Game: Faster, more energetic arp sequence
-    startGameMusic() {
-        if (!this.ctx || this.isMuted) return;
-        this.stopMusic();
-        this.resume();
-
-        // 1. Bass Pulse
-        const bass = this.ctx.createOscillator();
-        bass.type = 'square';
-        bass.frequency.value = 110;
-
-        const bassGain = this.ctx.createGain();
-        bassGain.gain.value = 0.1;
-
-        // Pulse LFO (Tremolo effective)
-        const pulse = this.ctx.createOscillator();
-        pulse.type = 'square';
-        pulse.frequency.value = 4; // 240 BPM eighth notesish
-        const pulseGain = this.ctx.createGain();
-        pulseGain.gain.value = 1; // Full depth
-
-        // This is a bit tricky in pure Web Audio without nodes graph, 
-        // simpler to just have a loop.
-
-        // Let's do a simple interval based loop for a sequence
-        // Store interval ID to clear later
-
-        // Actually, let's just make a simple textured drone with a higher arpeggiator "illusion" 
-        // using FM synthesis (easier than scheduling).
-
-        // Carrier
-        const osc = this.ctx.createOscillator();
-        osc.type = 'sawtooth';
-        osc.frequency.value = 110;
-
-        // Modulator (Creates 'energetic' timbre)
-        const mod = this.ctx.createOscillator();
-        mod.frequency.value = 220; // Octave up
-        const modGain = this.ctx.createGain();
-        modGain.gain.value = 50;
-
-        mod.connect(modGain);
-        modGain.connect(osc.frequency);
-
-        const filter = this.ctx.createBiquadFilter();
-        filter.type = 'bandpass';
-
-        // Auto-wah LFO
-        const lfo = this.ctx.createOscillator();
-        lfo.frequency.value = 2; // Energetic pulse
-        const lfoG = this.ctx.createGain();
-        lfoG.gain.value = 1000;
-
-        lfo.connect(lfoG);
-        lfoG.connect(filter.frequency);
-
-        const mGain = this.ctx.createGain();
-        mGain.gain.value = 0.1;
-
-        osc.connect(filter);
-        filter.connect(mGain);
-        mGain.connect(this.musicGain);
-
-        osc.start();
-        mod.start();
-        lfo.start();
-
-        this.currentMusicNodes.push(osc, mod, lfo, osc, mGain, filter, lfoG, modGain);
     }
 }
 
