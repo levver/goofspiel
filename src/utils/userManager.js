@@ -44,18 +44,35 @@ export const getUserProfile = async (userId) => {
 
 export const updateUserProfile = async (userId, data) => {
     try {
+        // Fetch existing profile first to ensure we don't overwrite name or other fields
+        // that are not included in 'data'
+        const existingSnap = await get(child(ref(db), `users/${userId}`));
+        const existing = existingSnap.exists() ? existingSnap.val() : {};
+
+        // Merge existing data with new data (new data takes precedence)
+        const merged = { ...existing, ...data };
+
+        // Fallback checks to ensure essential fields exist
+        if (!merged.name) {
+            // Try to recover name from auth if it's the current user
+            if (auth.currentUser && auth.currentUser.uid === userId) {
+                merged.name = getUserName();
+            } else {
+                merged.name = `Player ${userId.slice(0, 4)}`;
+            }
+        }
+
         const updates = {};
-        updates[`users/${userId}`] = data;
+        updates[`users/${userId}`] = merged;
 
         // Mirror to public_profiles for leaderboard
-        // Only include data needed for leaderboard to minimize data leakage if that's a concern
-        // But for now, we'll just mirror the whole profile object as it only contains non-sensitive data
-        updates[`public_profiles/${userId}`] = data;
+        updates[`public_profiles/${userId}`] = merged;
 
         await update(ref(db), updates);
     } catch (error) {
         console.error("Error updating user profile:", error);
     }
+    return null; // Return promise
 };
 
 export const getLeaderboard = async () => {
