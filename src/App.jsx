@@ -34,12 +34,12 @@ import { shuffle } from './utils/helpers';
 import { db } from './utils/firebaseConfig';
 import { ref, set, onValue, update, push, child, get, serverTimestamp, onDisconnect, remove } from "firebase/database";
 import { getUserId, getUserName, getUserProfile, updateUserProfile } from './utils/userManager';
-import { calculateNewRating } from './utils/glicko';
+
 import { auth } from './utils/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { findBestMatch, isHigherRated } from './utils/matchmaking';
 import { setupPresence, sendHeartbeat, cleanupPresence } from './utils/presence';
-import { generateShortGameId, checkAndCleanupGame } from './utils/gameLogic';
+import { generateShortGameId, checkAndCleanupGame, checkUnresolvedGames, processGameEndRatings } from './utils/gameLogic';
 
 function App() {
     // --- Firebase State ---
@@ -80,6 +80,9 @@ function App() {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setCurrentUser(user);
             setAuthLoading(false);
+            if (user) {
+                checkUnresolvedGames(user.uid);
+            }
         });
         return unsubscribe;
     }, []);
@@ -1041,34 +1044,8 @@ function App() {
 
         if (!hostId || !guestId) return;
 
-        const p1 = await getUserProfile(hostId);
-        const p2 = await getUserProfile(guestId);
-
-        let outcome = 0.5;
-        if (hostScore > guestScore) outcome = 1;
-        else if (guestScore > hostScore) outcome = 0;
-
-        const newP1 = calculateNewRating(p1, p2, outcome);
-        const newP2 = calculateNewRating(p2, p1, 1 - outcome);
-
-        // Store rating updates in the game object
-        // Each player will read their own stats and update their profile
-        await update(ref(db, `${FIREBASE_PATHS.GAMES}/${gameId}/ratingUpdates`), {
-            host: {
-                gamesPlayed: (p1.gamesPlayed || 0) + 1,
-                gamesWon: (p1.gamesWon || 0) + (outcome === 1 ? 1 : 0),
-                rating: newP1.rating,
-                rd: newP1.rd,
-                vol: newP1.vol
-            },
-            guest: {
-                gamesPlayed: (p2.gamesPlayed || 0) + 1,
-                gamesWon: (p2.gamesWon || 0) + (outcome === 0 ? 1 : 0),
-                rating: newP2.rating,
-                rd: newP2.rd,
-                vol: newP2.vol
-            }
-        });
+        // Use centralized rating processing
+        await processGameEndRatings(gameId, gameData, hostScore, guestScore);
     };
 
     const handleRequestRematch = () => {
