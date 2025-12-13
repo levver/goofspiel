@@ -164,13 +164,7 @@ class SoundManager {
             this._playKick(time);
         }
 
-        // --- 2. HI-HAT (Driving 16ths for energy) ---
-        if (beatNumber % 2 === 0) {
-            // Accent off-beats
-            this._playHiHat(time, beatNumber % 4 === 2);
-        }
-
-        // --- 3. BASS (User Pattern: Poly 3s, Darker Tone) ---
+        // --- 2. BASS (User Pattern: Poly 3s, Darker Tone) ---
         // D Phrygian Bass: D Eb F G A Bb C
         // Root (D) -> Flat 2nd (Eb) for tension
         if (this.stepCounter % 3 === 0) {
@@ -179,7 +173,7 @@ class SoundManager {
             this._playBass(time, note, 0.15); // Slightly longer sustain
         }
 
-        // --- 4. SUSPENSE CHORD (Occasional, spaced out) ---
+        // --- 3. SUSPENSE CHORD (Occasional, spaced out) ---
         // "Spaced out at least a couple seconds"
         // At 160 BPM, 1 bar (16 steps) = 1.5s.
         // Let's play every 32 steps (2 bars = 3s) or 48 steps (3 bars = 4.5s)
@@ -260,28 +254,31 @@ class SoundManager {
     }
 
     _playChord(time, freqs) {
-        // Suspenseful Swell
+        // Suspenseful Swell - Broken Chord
         freqs.forEach((f, i) => {
+            const stagger = i * 0.5; // "Spaced out a bit" - 0.5s delay per note
+            const t = time + stagger;
+
             const osc = this.ctx.createOscillator();
             osc.type = 'sawtooth';
             osc.frequency.value = f;
 
             const filter = this.ctx.createBiquadFilter();
             filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(200, time);
-            filter.frequency.exponentialRampToValueAtTime(3000, time + 1.5); // Open up
+            filter.frequency.setValueAtTime(200, t);
+            filter.frequency.exponentialRampToValueAtTime(3000, t + 1.5); // Open up
 
             const gain = this.ctx.createGain();
-            gain.gain.setValueAtTime(0, time);
-            gain.gain.linearRampToValueAtTime(0.2, time + 1.0); // Slow attack
-            gain.gain.linearRampToValueAtTime(0, time + 2.5); // Long release
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(0.2, t + 1.0); // Slow attack
+            gain.gain.linearRampToValueAtTime(0, t + 2.5); // Long release
 
             osc.connect(filter);
             filter.connect(gain);
             gain.connect(this.musicGain);
 
-            osc.start(time);
-            osc.stop(time + 3.0);
+            osc.start(t);
+            osc.stop(t + 3.0);
         });
     }
 
@@ -367,7 +364,7 @@ class SoundManager {
         // "Octave higher" (relative to bass range context, likely high register for 'bird')
         // "Quieter, less distorted"
         // "Highs of sine synced to lows of triangle" -> Inverse modulation
-        const birdSine = this._createOsc('sine', 1046.50, 0); // High C6 (Bird range)
+        const birdSine = this._createOsc('sine', 349.23, 0); // High C6 (Bird range)
         const birdGain = this.ctx.createGain();
         birdGain.gain.value = 0.02; // Base volume (Quiet)
 
