@@ -167,11 +167,11 @@ class SoundManager {
         // --- 2. BASS (User Pattern: Poly 3s, Darker Tone) ---
         // D Phrygian Bass: D Eb F G A Bb C
         // Root (D) -> Flat 2nd (Eb) for tension
-        if (this.stepCounter < 3 || this.stepCounter === 5) {
-            // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
-            const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
-            this._playBass(time, note, 0.15); // Slightly longer sustain
-        }
+        // if (this.stepCounter < 3 || this.stepCounter === 5) {
+        //     // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
+        //     const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
+        //     this._playBass(time, note, 0.15); // Slightly longer sustain
+        // }
 
         // --- 3. SUSPENSE ATMOSPHERE (Randomized Arpeggios) ---
         // if (this.stepCounter % 48 === 0) {
@@ -186,14 +186,14 @@ class SoundManager {
         // Melody Map: { step: frequency }
         // Syncopated, sparse phrasing
         if (loopStep === 0) this._playStaccatoVoice(time, 146.83); // D3
-        if (loopStep === 6) this._playStaccatoVoice(time, 174.61); // F3
-        if (loopStep === 9) this._playStaccatoVoice(time, 196.00); // G3
-        if (loopStep === 12) this._playStaccatoVoice(time, 220.00); // A3 (Target)
+        if (loopStep === 1) this._playStaccatoVoice(time, 174.61); // F3
+        if (loopStep === 2) this._playStaccatoVoice(time, 196.00); // G3
+        if (loopStep === 3) this._playStaccatoVoice(time, 220.00); // A3 (Target)
 
-        if (loopStep === 16) this._playStaccatoVoice(time, 233.08); // Bb3
-        if (loopStep === 22) this._playStaccatoVoice(time, 220.00); // A3
-        if (loopStep === 26) this._playStaccatoVoice(time, 311.13); // Eb4 (The "Blade Runner" tension note)
-        if (loopStep === 39) this._playStaccatoVoice(time, 293.66); // D4
+        if (loopStep === 5) this._playStaccatoVoice(time, 233.08); // Bb3
+        if (loopStep === 6) this._playStaccatoVoice(time, 220.00); // A3
+        if (loopStep === 7) this._playStaccatoVoice(time, 311.13); // Eb4 (The "Blade Runner" tension note)
+        if (loopStep === 8) this._playStaccatoVoice(time, 293.66); // D4
 
         // --- 5. NEW TEXTURE: Glitch Shimmer (High Freq Texture) ---
         // Play on odd 8th notes to offset the kick/bass interaction
