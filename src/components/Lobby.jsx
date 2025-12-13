@@ -147,7 +147,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                     </div>
 
                     <form onSubmit={handleJoin} className="space-y-3">
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                             <input
                                 type="text"
                                 value={joinCode}
