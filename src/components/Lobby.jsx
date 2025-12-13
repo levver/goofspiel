@@ -4,6 +4,7 @@ import { signOut } from 'firebase/auth';
 import { Pyramid, Trophy, LogOut } from './Icons';
 import { LOBBY_TEXT } from '../utils/constants';
 import Leaderboard from './Leaderboard';
+import SoundManager from '../utils/SoundManager';
 
 const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStartTime, onFindMatch, onCancelSearch }) => {
     const [joinCode, setJoinCode] = useState('');
@@ -34,6 +35,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
     }, [isSearching, searchStartTime]);
 
     const handleSignOut = async () => {
+        SoundManager.playClick();
         try {
             await signOut(auth);
         } catch (error) {
@@ -44,6 +46,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
     const handleJoin = (e) => {
         e.preventDefault();
         if (joinCode.trim()) {
+            SoundManager.playClick();
             setIsJoining(true);
             onJoinGame(joinCode.trim());
         }
@@ -167,7 +170,10 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                     </form>
 
                     <button
-                        onClick={() => setShowLeaderboard(true)}
+                        onClick={() => {
+                            SoundManager.playClick();
+                            setShowLeaderboard(true);
+                        }}
                         className="w-full py-4 bg-slate-800/80 hover:bg-slate-700 text-yellow-500 font-bold rounded-xl border border-yellow-500/30 transition-all hover:scale-105 shadow-lg flex items-center justify-center gap-2 uppercase tracking-widest"
                     >
                         <Trophy className="w-5 h-5 drop-shadow-glow-yellow" />
@@ -178,7 +184,10 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
 
             {/* Leaderboard Overlay */}
             {showLeaderboard && (
-                <Leaderboard onClose={() => setShowLeaderboard(false)} />
+                <Leaderboard onClose={() => {
+                    SoundManager.playClick();
+                    setShowLeaderboard(false);
+                }} />
             )}
 
 

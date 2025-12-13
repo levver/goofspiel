@@ -40,6 +40,8 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { findBestMatch, isHigherRated } from './utils/matchmaking';
 import { setupPresence, sendHeartbeat, cleanupPresence } from './utils/presence';
 import { generateShortGameId, checkAndCleanupGame, checkUnresolvedGames, processGameEndRatings } from './utils/gameLogic';
+import SoundManager from './utils/SoundManager';
+
 
 function App() {
     // --- Firebase State ---
@@ -74,6 +76,32 @@ function App() {
     const [showDisconnectWarning, setShowDisconnectWarning] = useState(false);
     const [showEndScreen, setShowEndScreen] = useState(false);
     const playerSlotRef = useRef(null);
+
+    // --- Audio Logic ---
+    useEffect(() => {
+        // Initialize audio on first user interaction if possible, or just rely on lazy init
+        const handleInteraction = () => {
+            SoundManager.init();
+            window.removeEventListener('click', handleInteraction);
+        };
+        window.addEventListener('click', handleInteraction);
+        return () => window.removeEventListener('click', handleInteraction);
+    }, []);
+
+    // Manage Background Music based on state
+    useEffect(() => {
+        if (!gameData) {
+            // Main Menu (Lobby)
+            SoundManager.startMenuMusic();
+        } else if (gameData.status === GAME_STATUS.WAITING) {
+            SoundManager.startMenuMusic();
+        } else if (gameData.status === GAME_STATUS.PLAYING || gameData.status === GAME_STATUS.RESOLVING) {
+            SoundManager.startGameMusic();
+        } else if (gameData.status === GAME_STATUS.END) {
+            SoundManager.startMenuMusic(); // Back to chill
+        }
+    }, [gameData?.status]);
+
 
     // --- Firebase Auth Logic ---
     useEffect(() => {
@@ -135,6 +163,7 @@ function App() {
     // --- Firebase Logic ---
 
     const createGame = () => {
+        SoundManager.playClick();
         const newGameId = generateShortGameId();
 
         const initialGameData = {
@@ -176,6 +205,7 @@ function App() {
     };
 
     const joinGame = (code) => {
+        SoundManager.playClick();
         const gameRef = ref(db, `${FIREBASE_PATHS.GAMES}/${code}`);
 
         // Check if game exists
@@ -622,6 +652,9 @@ function App() {
             if (currentLog.msg && currentLog.msg.includes(MESSAGES.WON) && (currentLog.type === ROLES.HOST || currentLog.type === ROLES.GUEST)) {
                 // Determine if I won
                 const iWon = currentLog.type === playerId;
+
+                if (iWon) SoundManager.playWin();
+                else SoundManager.playLose();
 
                 // Get prize rank from message "WON 10" or "WON (+10)"
                 const match = currentLog.msg.match(/(\d+)/);
@@ -1348,6 +1381,8 @@ function App() {
 
     const handleCardClick = (rank, e) => {
         if (!gameData || gameData.status !== GAME_STATUS.PLAYING || animatingCard) return;
+
+        SoundManager.playCardSlide();
 
         // Check if already bid
         const myData = playerId === 'host' ? gameData.host : gameData.guest;
