@@ -144,28 +144,35 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                     </div>
 
                     <form onSubmit={handleJoin} className="space-y-3">
-                        <input
-                            type="text"
-                            value={joinCode}
-                            onChange={(e) => setJoinCode(e.target.value)}
-                            placeholder={LOBBY_TEXT.ENTER_CODE_PLACEHOLDER}
-                            className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-center font-mono text-lg tracking-widest text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 focus:shadow-glow-cyan transition-all"
-                        />
-                        <button
-                            type="submit"
-                            disabled={!joinCode.trim() || isJoining}
-                            className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                            {isJoining ? (
-                                <span className="animate-pulse">{LOBBY_TEXT.CONNECTING}</span>
-                            ) : (
-                                <>
-                                    <Trophy className="w-4 h-4" />
-                                    {LOBBY_TEXT.JOIN_GAME}
-                                </>
-                            )}
-                        </button>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={joinCode}
+                                onChange={(e) => setJoinCode(e.target.value)}
+                                placeholder={LOBBY_TEXT.ENTER_CODE_PLACEHOLDER}
+                                className="flex-1 bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 font-mono text-lg tracking-widest text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 focus:shadow-glow-cyan transition-all"
+                            />
+                            <button
+                                type="submit"
+                                disabled={!joinCode.trim() || isJoining}
+                                className="px-6 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap"
+                            >
+                                {isJoining ? (
+                                    <span className="animate-pulse">{LOBBY_TEXT.CONNECTING}</span>
+                                ) : (
+                                    LOBBY_TEXT.JOIN_GAME
+                                )}
+                            </button>
+                        </div>
                     </form>
+
+                    <button
+                        onClick={() => setShowLeaderboard(true)}
+                        className="w-full py-4 bg-slate-800/80 hover:bg-slate-700 text-yellow-500 font-bold rounded-xl border border-yellow-500/30 transition-all hover:scale-105 shadow-lg flex items-center justify-center gap-2 uppercase tracking-widest"
+                    >
+                        <Trophy className="w-5 h-5 drop-shadow-glow-yellow" />
+                        Leaderboard
+                    </button>
                 </div>
             </div>
 
@@ -174,19 +181,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                 <Leaderboard onClose={() => setShowLeaderboard(false)} />
             )}
 
-            {/* Floating Action Button for Leaderboard (if not in searching mode) */}
-            {!isSearching && (
-                <button
-                    onClick={() => setShowLeaderboard(true)}
-                    className="absolute top-4 right-4 p-3 bg-slate-800/80 hover:bg-slate-700 text-yellow-500 rounded-full border border-yellow-500/30 transition-all hover:scale-110 shadow-lg group z-50"
-                    title="Leaderboard"
-                >
-                    <Trophy className="w-6 h-6 drop-shadow-glow-yellow" />
-                    <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 px-2 py-1 bg-black/80 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-                        Leaderboard
-                    </span>
-                </button>
-            )}
+
         </div>
     );
 };
