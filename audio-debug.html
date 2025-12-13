@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoundManager Debug Console</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --accent: #e94560;
+            --text: #eee;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+        h1 { color: var(--accent); margin-bottom: 1rem; }
+        h2 { border-bottom: 1px solid var(--accent); padding-bottom: 0.5rem; margin-top: 2rem; }
+        .section { margin-bottom: 2rem; }
+        button {
+            background: var(--surface);
+            border: 1px solid var(--accent);
+            color: var(--text);
+            padding: 0.8rem 1.5rem;
+            margin: 0.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: var(--accent);
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .status {
+            padding: 1rem;
+            background: var(--surface);
+            border-radius: 6px;
+            font-family: monospace;
+            margin-top: 1rem;
+        }
+        .log {
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+        }
+        .log-entry { padding: 0.25rem 0; border-bottom: 1px solid #333; }
+        .log-entry.info { color: #7ee787; }
+        .log-entry.warn { color: #f0883e; }
+        #hmr-indicator {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.5rem 1rem;
+            background: #22c55e;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #hmr-indicator.show { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div id="hmr-indicator">🔄 HMR Updated!</div>
+
+    <h1>🎵 SoundManager Debug Console</h1>
+
+    <div class="status">
+        <strong>Status:</strong> <span id="status">Not Initialized</span>
+    </div>
+
+    <div class="section">
+        <h2>Core Controls</h2>
+        <button id="btn-init">Initialize / Resume</button>
+        <button id="btn-mute">Mute</button>
+        <button id="btn-unmute">Unmute</button>
+    </div>
+
+    <div class="section">
+        <h2>Music Tracks</h2>
+        <button id="btn-menu">Start Menu Music</button>
+        <button id="btn-game">Start Game Music</button>
+        <button id="btn-stop">Stop Music</button>
+    </div>
+
+    <div class="section">
+        <h2>Sound Effects</h2>
+        <button id="btn-click">Play Click</button>
+        <button id="btn-hover">Play Hover</button>
+        <button id="btn-slide">Play Card Slide</button>
+        <button id="btn-win">Play Win</button>
+        <button id="btn-lose">Play Lose</button>
+    </div>
+
+    <div class="section">
+        <h2>Console Log</h2>
+        <div class="status log" id="log"></div>
+    </div>
+
+    <script type="module">
+        // Import SoundManager directly from src
+        import SoundManager from './src/utils/SoundManager.js';
+
+        // Make it global for console debugging
+        window.SoundManager = SoundManager;
+
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const hmrIndicator = document.getElementById('hmr-indicator');
+
+        function log(msg, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.prepend(entry);
+        }
+
+        function updateStatus() {
+            if (!SoundManager.ctx) {
+                statusEl.textContent = 'Not Initialized';
+            } else {
+                statusEl.textContent = `CTX: ${SoundManager.ctx.state} | Track: ${SoundManager.currentTrack || 'none'} | Muted: ${SoundManager.isMuted}`;
+            }
+        }
+
+        // Wrap all calls to log and update status
+        function wrapAction(name, fn) {
+            return () => {
+                try {
+                    fn();
+                    log(`${name} executed.`);
+                } catch (e) {
+                    log(`${name} FAILED: ${e.message}`, 'warn');
+                }
+                updateStatus();
+            };
+        }
+
+        document.getElementById('btn-init').onclick = wrapAction('resume()', () => SoundManager.resume());
+        document.getElementById('btn-mute').onclick = wrapAction('mute(true)', () => SoundManager.mute(true));
+        document.getElementById('btn-unmute').onclick = wrapAction('mute(false)', () => SoundManager.mute(false));
+        document.getElementById('btn-menu').onclick = wrapAction('startMenuMusic()', () => SoundManager.startMenuMusic());
+        document.getElementById('btn-game').onclick = wrapAction('startGameMusic()', () => SoundManager.startGameMusic());
+        document.getElementById('btn-stop').onclick = wrapAction('stopMusic()', () => SoundManager.stopMusic());
+        document.getElementById('btn-click').onclick = wrapAction('playClick()', () => SoundManager.playClick());
+        document.getElementById('btn-hover').onclick = wrapAction('playHover()', () => SoundManager.playHover());
+        document.getElementById('btn-slide').onclick = wrapAction('playCardSlide()', () => SoundManager.playCardSlide());
+        document.getElementById('btn-win').onclick = wrapAction('playWin()', () => SoundManager.playWin());
+        document.getElementById('btn-lose').onclick = wrapAction('playLose()', () => SoundManager.playLose());
+
+        log('Debug console loaded. Click "Initialize / Resume" to start.');
+        updateStatus();
+
+        // Vite HMR support
+        if (import.meta.hot) {
+            import.meta.hot.accept('./src/utils/SoundManager.js', (newModule) => {
+                log('🔄 SoundManager module updated via HMR!');
+                hmrIndicator.classList.add('show');
+                setTimeout(() => hmrIndicator.classList.remove('show'), 2000);
+                // Note: The singleton instance won't fully hot-reload without re-initializing.
+                // For a full restart, click Stop then Start again after HMR.
+                updateStatus();
+            });
+        }
+    </script>
+</body>
+</html>
