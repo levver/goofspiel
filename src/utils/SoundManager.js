@@ -43,7 +43,7 @@ class SoundManager {
 
             // SFX Bus
             this.sfxGain = this.ctx.createGain();
-            this.sfxGain.gain.value = 0.4;
+            this.sfxGain.gain.value = 0.8; // Boosted for clarity
             this.sfxGain.connect(this.masterGain);
 
             this.initialized = true;
@@ -94,7 +94,7 @@ class SoundManager {
         if (this.ctx.state === 'suspended') return;
         if (this.currentTrack === this.targetTrack) return;
 
-        console.log(`[SoundManager] Switching: ${this.currentTrack} -> ${this.targetTrack}`);
+        // console.log(`[SoundManager] Switching: ${this.currentTrack} -> ${this.targetTrack}`); // Removed this line
 
         // Stop Everything
         this._stopScheduler();
@@ -131,7 +131,7 @@ class SoundManager {
     }
 
     _scheduler() {
-        // While there are notes that will need to play before the next interval,
+        // While there are notes that will need to play before the next interval, 
         // schedule them and advance the pointer.
         while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAheadTime) {
             this._scheduleNote(this.current16thNote, this.nextNoteTime);
@@ -160,24 +160,30 @@ class SoundManager {
         // beatNumber is 0..15 (one bar of 16th notes)
 
         // --- 1. KICK (User Pattern: Poly 7s) ---
-        // if (this.stepCounter % 7 === 0) {
-        //     this._playKick(time);
-        // }
+        if (this.stepCounter % 7 === 0) {
+            this._playKick(time);
+        }
 
         // --- 2. BASS (User Pattern: Poly 3s, Darker Tone) ---
         // D Phrygian Bass: D Eb F G A Bb C
         // Root (D) -> Flat 2nd (Eb) for tension
-        // if (this.stepCounter % 3 === 0) {
-        // // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
-        // const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
-        // this._playBass(time, note, 0.15); // Slightly longer sustain
-        // }
+        if (this.stepCounter % 3 === 0) {
+            // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
+            const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
+            this._playBass(time, note, 0.15); // Slightly longer sustain
+        }
 
         // --- 3. SUSPENSE ATMOSPHERE (Randomized Arpeggios) ---
         // Play every ~3-5 seconds (randomized logic inside scheduler?)
         // Or keep fixed interval but random content. Fixed interval is easier for now.
         if (this.stepCounter % 48 === 0) {
             this._playRandomAtmosphere(time);
+        }
+
+        // --- 4. NEW TEXTURE: Glitch Shimmer (High Freq Texture) ---
+        // Play on odd 8th notes to offset the kick/bass interaction
+        if (beatNumber % 4 === 2) {
+            this._playGlitchTexture(time);
         }
     }
 
@@ -188,10 +194,10 @@ class SoundManager {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
 
-        // Punchier kick (higher start freq, faster drop)
-        osc.frequency.setValueAtTime(180, time);
+        // Softer kick (lower start freq, balanced mix)
+        osc.frequency.setValueAtTime(120, time); // Was 180 (Less "clicky")
         osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.4);
-        gain.gain.setValueAtTime(0.8, time);
+        gain.gain.setValueAtTime(0.4, time); // Was 0.8 (Much quieter)
         gain.gain.exponentialRampToValueAtTime(0.01, time + 0.4);
 
         osc.connect(gain);
@@ -199,6 +205,31 @@ class SoundManager {
 
         osc.start(time);
         osc.stop(time + 0.4);
+    }
+
+    _playGlitchTexture(time) {
+        // High passed noise burst
+        const bufferSize = this.ctx.sampleRate * 0.05; // Short
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.value = 5000 + Math.random() * 2000; // Random high freq
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.05, time); // Subtle background layer
+        gain.gain.linearRampToValueAtTime(0, time + 0.05);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.musicGain);
+
+        noise.start(time);
     }
 
     _playHiHat(time, isOpen) {
@@ -235,8 +266,8 @@ class SoundManager {
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.Q.value = 5; // Resonant 'acid' bite
-        filter.frequency.setValueAtTime(freq * 8, time); // Start bright
+        filter.Q.value = 2; // Was 5 (Less synthetic/resonant bite)
+        filter.frequency.setValueAtTime(freq * 4, time); // Was * 8 (Softer sweep)
         filter.frequency.exponentialRampToValueAtTime(freq, time + duration); // Filter sweep down
 
         const gain = this.ctx.createGain();
@@ -266,8 +297,8 @@ class SoundManager {
         // Play them with random timing offsets
         let currentOffset = 0;
         selectedFreqs.forEach((f) => {
-            // Random spacing between 0.2s and 0.6s
-            const spacing = 0.2 + Math.random() * 0.4;
+            // "Space staccato notes closer together"
+            const spacing = 0.1 + Math.random() * 0.15; // Tight bursts
             currentOffset += spacing;
             const t = time + currentOffset;
 
