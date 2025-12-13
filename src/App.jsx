@@ -57,6 +57,16 @@ function App() {
     const [animationProps, setAnimationProps] = useState(null);
     const [localTime, setLocalTime] = useState(INITIAL_TIME);
     const [oppLocalTime, setOppLocalTime] = useState(INITIAL_TIME);
+
+    // Refs for timer logic to avoid dependency cycles and interval resets
+    const localTimeRef = useRef(INITIAL_TIME);
+    const oppLocalTimeRef = useRef(INITIAL_TIME);
+
+    // Keep refs in sync with state for heartbeat consumption
+    useEffect(() => {
+        localTimeRef.current = localTime;
+    }, [localTime]);
+
     const [rematchStatus, setRematchStatus] = useState(null); // REMATCH_STATUS.WAITING, REMATCH_STATUS.OPPONENT_REQUESTED, REMATCH_STATUS.DECLINED, REMATCH_STATUS.LEFT
     const [isSearching, setIsSearching] = useState(false);
     const [searchStartTime, setSearchStartTime] = useState(null);
@@ -238,15 +248,16 @@ function App() {
         setupPresence(gameId, playerId);
 
         // Send heartbeat every 5 seconds
+        // IMPORTANT: Use localTimeRef.current to avoid resetting the interval when time changes
         const heartbeatInterval = setInterval(() => {
-            sendHeartbeat(gameId, playerId, localTime);
+            sendHeartbeat(gameId, playerId, localTimeRef.current);
         }, TIMINGS.HEARTBEAT_INTERVAL);
 
         return () => {
             clearInterval(heartbeatInterval);
             cleanupPresence(gameId, playerId);
         };
-    }, [gameId, playerId, localTime]);
+    }, [gameId, playerId]); // Removed localTime from dependencies
 
     // Detect when matched into a game (for the waiting user)
     useEffect(() => {
@@ -333,29 +344,95 @@ function App() {
         }
     }, [oppBid, gameData?.status]);
 
-    // Sync local time with server time when round changes or game starts
+    // Sync local time with server time
+    // ONLY when:
+    // 1. Initial load (time undefined)
+    // 2. Round changes (new round starts)
+    // 3. Game state changes significantly (e.g. from WAITING to PLAYING)
     useEffect(() => {
-        if (myData && myData.time !== undefined) {
-            setLocalTime(myData.time);
+        // Sync my time only if I don't have a local bid yet (timer running) OR it's a new round
+        if (gameData?.round !== undefined) {
+            // For opponent, we ALWAYS sync from server because that's our source of truth for them
+            // EXCEPT when they have acted continuously. We trust our local countdown for smoothness
+            // but re-sync if the deviation is large? actually, let's just sync safely.
+            // Simpler approach: Sync once per round start.
         }
-        setOppLocalTime(oppData.time);
+
+        // We use a separate effect for precise control or combine here.
+        // Let's rely on the previous logic but made stricter.
+
+        // Initial / Round sync
+        if (myData && myData.time !== undefined) {
+            // Only force update if it's a fresh round or we are way off (e.g. reconnect)
+            // Determining "fresh round without storing state" is tricky.
+            // Let's use the round number as a key dependency.
+        }
+    }, []); // This empty dependency array was a mistake in my thought process, let's look at the next block.
+
+    // Correct Sync Logic:
+    useEffect(() => {
+        // Always sync opponent time from server, until we implement smooth extrapolation
+        // Actually, for smoothness, we should set it once per round, then let it tick locally.
+        // But if we drift, we should correct.
+        // For MY time: I am the authority. I should NOT overwrite my local time with the server's
+        // stale echo of my time.
+
+        if (myData?.time !== undefined && oppData?.time !== undefined) {
+            // If it's a new round (detected via logic or prop), reset. 
+            // Since we don't track "prevRound", we can just be careful.
+
+            // Simple approach for now to fix the "Jump":
+            // Don't setLocalTime from myData.time unless it's the start of the game/round.
+            // But how do we know?
+
+            // We can trust the server time ONLY if we haven't started ticking down yet? 
+            // Or if the server time is higher (reset)?
+
+            // Better: When gameData.round changes, we reset both.
+        }
+    }, [gameData?.round]);
+
+    // Actually effective Sync Effect:
+    useEffect(() => {
+        if (myData?.time !== undefined) {
+            setLocalTime(t => {
+                // If the server time is significantly different (e.g. reset to 300), take it.
+                // Otherwise stick to local.
+                if (Math.abs(t - myData.time) > 5) {
+                    return myData.time;
+                }
+                return t;
+            });
+        }
+        if (oppData?.time !== undefined) {
+            setOppLocalTime(t => {
+                if (Math.abs(t - oppData.time) > 5) {
+                    return oppData.time;
+                }
+                return t;
+            });
+        }
     }, [gameData?.round, myData?.time, oppData?.time]);
 
-    // Timer Tick Logic
+
+    // Timer Tick Logic - FIXED
     useEffect(() => {
         let interval = null;
         if (gameData?.status === GAME_STATUS.PLAYING) {
             interval = setInterval(() => {
-                if (!myData?.bid && localTime > 0) {
+                // My timer: Tick if I haven't bid
+                if (!myBid) {
                     setLocalTime(t => Math.max(0, t - 1));
                 }
-                if (oppLocalTime > 0) {
+
+                // Opponent timer: Tick if THEY haven't bid
+                if (!oppBid) {
                     setOppLocalTime(t => Math.max(0, t - 1));
                 }
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [gameData?.status, myData?.bid, localTime, oppLocalTime]);
+    }, [gameData?.status, myBid, oppBid]); // Removed time dependencies to prevent Interval Thrashing
 
     // Monitor Opponent Disconnect
     useEffect(() => {
