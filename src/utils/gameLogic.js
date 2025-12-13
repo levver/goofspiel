@@ -46,6 +46,7 @@ export const processGameEndRatings = async (gameId, gameData, hostScore, guestSc
             gamesPlayed: (p1.gamesPlayed || 0) + 1,
             gamesWon: (p1.gamesWon || 0) + (outcome === 1 ? 1 : 0),
             rating: newP1.rating,
+            previousRating: p1.rating, // Store previous rating
             rd: newP1.rd,
             vol: newP1.vol
         },
@@ -53,6 +54,7 @@ export const processGameEndRatings = async (gameId, gameData, hostScore, guestSc
             gamesPlayed: (p2.gamesPlayed || 0) + 1,
             gamesWon: (p2.gamesWon || 0) + (outcome === 0 ? 1 : 0),
             rating: newP2.rating,
+            previousRating: p2.rating, // Store previous rating
             rd: newP2.rd,
             vol: newP2.vol
         }

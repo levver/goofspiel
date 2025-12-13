@@ -1669,6 +1669,7 @@ function App() {
                     rematchStatus={rematchStatus}
                     onRequestRematch={handleRequestRematch}
                     onDeclineRematch={handleDeclineRematch}
+                    ratingUpdate={gameData.ratingUpdates ? (isHost ? gameData.ratingUpdates.host : gameData.ratingUpdates.guest) : null}
                 />
             )}
             {/* Animating Prize Card */}

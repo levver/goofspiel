@@ -54,6 +54,15 @@ export default {
                 'shatter': {
                     '0%': { opacity: '1', transform: 'scale(1)' },
                     '100%': { opacity: '0', transform: 'scale(0.5) rotate(10deg)' }
+                },
+                'thump': {
+                    '0%': { transform: 'scale(1)' },
+                    '50%': { transform: 'scale(1.5)' },
+                    '100%': { transform: 'scale(1)' }
+                },
+                'fade-in-up': {
+                    '0%': { opacity: '0', transform: 'translateY(10px)' },
+                    '100%': { opacity: '1', transform: 'translateY(0)' }
                 }
             },
             animation: {
@@ -67,6 +76,8 @@ export default {
                 'pop-in': 'pop-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
                 'flash': 'flash 0.5s ease-out',
                 'shatter': 'shatter 1.5s ease-out forwards',
+                'thump': 'thump 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards',
+                'fade-in-up': 'fade-in-up 0.5s ease-out forwards',
             },
             boxShadow: {
                 'glow-cyan': '0 0 20px theme("colors.cyan.400"), 0 0 40px theme("colors.cyan.500")',
