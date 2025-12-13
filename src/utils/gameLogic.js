@@ -1,5 +1,5 @@
 import { ref, update, get, serverTimestamp } from "firebase/database";
-import { db } from "./firebaseConfig";
+import { db, auth } from "./firebaseConfig";
 import { GAME_STATUS, FIREBASE_PATHS, TIMINGS, ROLES, MESSAGES, LOG_TYPES } from "./constants";
 import { calculateNewRating } from "./glicko";
 import { getUserProfile, updateUserProfile } from "./userManager";
@@ -64,12 +64,22 @@ export const processGameEndRatings = async (gameId, gameData, hostScore, guestSc
     await update(ref(db), updates);
 
     // Also update the users' profiles directly here to ensure consistency
-    // Also update the users' profiles directly here to ensure consistency
-    // Use allSettled to ensure both define attempts run
-    const results = await Promise.allSettled([
-        updateUserProfile(hostId, ratingUpdates.host),
-        updateUserProfile(guestId, ratingUpdates.guest)
-    ]);
+    // SECURITY FIX: Only update the current user's profile. The other user will update theirs
+    // when they log in / view the game result, handled by App.jsx.
+    // Trying to update another user's profile usually fails due to Firebase Rules.
+
+    const currentUserId = auth.currentUser?.uid;
+    const promises = [];
+
+    if (currentUserId === hostId) {
+        promises.push(updateUserProfile(hostId, ratingUpdates.host));
+    }
+
+    if (currentUserId === guestId) {
+        promises.push(updateUserProfile(guestId, ratingUpdates.guest));
+    }
+
+    const results = await Promise.allSettled(promises);
 
     results.forEach((result, index) => {
         if (result.status === 'rejected') {
