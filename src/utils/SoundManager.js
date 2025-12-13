@@ -159,15 +159,15 @@ class SoundManager {
     _scheduleNote(beatNumber, time) {
         // beatNumber is 0..15 (one bar of 16th notes)
 
-        // --- 1. KICK (User Pattern: Poly 7s) ---
-        if (this.stepCounter % 7 === 0) {
+        // --- 1. KICK (User Pattern: 4s) ---
+        if (this.stepCounter % 4 === 0) {
             this._playKick(time);
         }
 
         // --- 2. BASS (User Pattern: Poly 3s, Darker Tone) ---
         // D Phrygian Bass: D Eb F G A Bb C
         // Root (D) -> Flat 2nd (Eb) for tension
-        if (this.stepCounter % 7 === 2) {
+        if (this.stepCounter < 3 || this.stepCounter === 5) {
             // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
             const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
             this._playBass(time, note, 0.15); // Slightly longer sustain
@@ -181,7 +181,7 @@ class SoundManager {
         // --- 4. MAIN THEME (Jazzy/Blade Runner Structure) ---
         // Consistent 4-bar loop (64 steps)
         // D Phrygian Noir: D, F, G, A, Bb, C, Eb, D
-        const loopStep = this.stepCounter % 48;
+        const loopStep = this.stepCounter % 64;
 
         // Melody Map: { step: frequency }
         // Syncopated, sparse phrasing
