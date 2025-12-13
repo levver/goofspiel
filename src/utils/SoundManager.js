@@ -107,6 +107,8 @@ class SoundManager {
             this._playMenuDrone();
             this.currentTrack = 'menu';
         } else if (this.targetTrack === 'game') {
+            // "Play off the menu music" -> Base layer is the drone
+            this._playMenuDrone();
             this._startScheduler();
             this.currentTrack = 'game';
         }
@@ -118,6 +120,7 @@ class SoundManager {
         if (this.isPlaying) return;
         this.isPlaying = true;
         this.current16thNote = 0;
+        this.stepCounter = 0; // consistent counter for longer loops
         this.nextNoteTime = this.ctx.currentTime + 0.1;
         this._scheduler();
     }
@@ -147,6 +150,7 @@ class SoundManager {
         // so 0.25 * beatDuration
 
         this.current16thNote++;
+        this.stepCounter++;
         if (this.current16thNote === 16) {
             this.current16thNote = 0;
         }
@@ -156,7 +160,7 @@ class SoundManager {
         // beatNumber is 0..15 (one bar of 16th notes)
 
         // --- 1. KICK (User Pattern: Poly 7s) ---
-        if (beatNumber % 7 === 0) {
+        if (this.stepCounter % 7 === 0) {
             this._playKick(time);
         }
 
@@ -169,21 +173,19 @@ class SoundManager {
         // --- 3. BASS (User Pattern: Poly 3s, Darker Tone) ---
         // D Phrygian Bass: D Eb F G A Bb C
         // Root (D) -> Flat 2nd (Eb) for tension
-        if (beatNumber % 3 === 0) {
+        if (this.stepCounter % 3 === 0) {
             // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
             const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
             this._playBass(time, note, 0.15); // Slightly longer sustain
         }
 
-        // --- 4. ARP / LEAD (Dark/Suspenseful) ---
-        // User Pattern
-        const arpPattern = [1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0];
-        if (arpPattern[beatNumber]) {
-            // D Phrygian Scale (Shifted down 2 semitones)
-            // D, Eb, F, Ab, A
-            const scale = [293.66, 311.13, 349.23, 415.30, 440.00];
-            const pitch = scale[Math.floor(Math.random() * scale.length)];
-            this._playArpTone(time, pitch);
+        // --- 4. SUSPENSE CHORD (Occasional, spaced out) ---
+        // "Spaced out at least a couple seconds"
+        // At 160 BPM, 1 bar (16 steps) = 1.5s.
+        // Let's play every 32 steps (2 bars = 3s) or 48 steps (3 bars = 4.5s)
+        if (this.stepCounter % 48 === 0) {
+            // Dark D Minor / Phrygian Swell: D, F, A
+            this._playChord(time, [293.66, 349.23, 440.00]);
         }
     }
 
@@ -257,6 +259,32 @@ class SoundManager {
         osc.stop(time + duration);
     }
 
+    _playChord(time, freqs) {
+        // Suspenseful Swell
+        freqs.forEach((f, i) => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.value = f;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(200, time);
+            filter.frequency.exponentialRampToValueAtTime(3000, time + 1.5); // Open up
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0, time);
+            gain.gain.linearRampToValueAtTime(0.2, time + 1.0); // Slow attack
+            gain.gain.linearRampToValueAtTime(0, time + 2.5); // Long release
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.musicGain);
+
+            osc.start(time);
+            osc.stop(time + 3.0);
+        });
+    }
+
     _playArpTone(time, freq) {
         // FM Metallic Pluck
         const carrier = this.ctx.createOscillator();
@@ -289,29 +317,43 @@ class SoundManager {
     // --- MENU AMBIENCE ---
 
     _playMenuDrone() {
-        // 1. Deep Bass Drone
-        const bass = this._createOsc('triangle', 32.70, 0); // Low C (Shifted down 2 semitones)
+        // Shared LFO for "Breathing" / Syncing
+        const breathLfo = this.ctx.createOscillator();
+        breathLfo.frequency.value = 0.15; // Slow breath
+        breathLfo.start();
+
+        // 1. Deep Bass Drone (Triangle)
+        // "Lows of the triangle synced to highs of the sine"
+        const bass = this._createOsc('triangle', 32.70, 0); // Low C
         const bassGain = this.ctx.createGain();
-        bassGain.gain.value = 0.2;
+        bassGain.gain.value = 0.2; // Base volume
+
+        // Modulate Bass Gain: breathe +/- 0.1
+        // LFO (0.15Hz) -> bassAmpMod -> bassGain.gain
+        const bassAmpMod = this.ctx.createGain();
+        bassAmpMod.gain.value = 0.1;
+        breathLfo.connect(bassAmpMod);
+        bassAmpMod.connect(bassGain.gain);
+
         bass.connect(bassGain);
         bassGain.connect(this.musicGain);
 
-        // 2. Swelling Pad
-        const pad1 = this._createOsc('sawtooth', 130.81, 10); // C3 detuned
-        const pad2 = this._createOsc('sawtooth', 131.81, -10); // C3 detuned
+        // 2. Swelling Pad (Unchanged, but maybe sync LFO?)
+        const pad1 = this._createOsc('sawtooth', 130.81, 10);
+        const pad2 = this._createOsc('sawtooth', 131.81, -10);
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.value = 400;
 
-        // LFO for filter breath
-        const lfo = this.ctx.createOscillator();
-        lfo.frequency.value = 0.08; // Very Slow
-        const lfoGain = this.ctx.createGain();
-        lfoGain.gain.value = 300;
+        // Filter LFO
+        const filterLfo = this.ctx.createOscillator();
+        filterLfo.frequency.value = 0.08;
+        const filterLfoGain = this.ctx.createGain();
+        filterLfoGain.gain.value = 300;
 
-        lfo.connect(lfoGain);
-        lfoGain.connect(filter.frequency);
+        filterLfo.connect(filterLfoGain);
+        filterLfoGain.connect(filter.frequency);
 
         const padGain = this.ctx.createGain();
         padGain.gain.value = 0.05;
@@ -321,15 +363,38 @@ class SoundManager {
         filter.connect(padGain);
         padGain.connect(this.musicGain);
 
-        // 3. "Data Rain" Random Textures
-        // We can simulate this with a filtered noise node getting random gain spikes
-        // But for simplicity/CPU, let's just stick to the rich drones for now
-        // Maybe add a high panned sine blip occasionally?
+        // 3. "Bird Echo" Sine Wave
+        // "Octave higher" (relative to bass range context, likely high register for 'bird')
+        // "Quieter, less distorted"
+        // "Highs of sine synced to lows of triangle" -> Inverse modulation
+        const birdSine = this._createOsc('sine', 1046.50, 0); // High C6 (Bird range)
+        const birdGain = this.ctx.createGain();
+        birdGain.gain.value = 0.02; // Base volume (Quiet)
 
-        const start = (node) => node.start();
-        [bass, pad1, pad2, lfo].forEach(start);
+        // Modulate Bird Gain: Inverse of Bass
+        // We want Sine High when LFO is Low (-1).
+        // Gain += LFO * -0.02 ?
+        // If LFO = -1 -> -1 * -0.02 = +0.02 -> Total 0.04 (Peak)
+        // If LFO = 1 -> 1 * -0.02 = -0.02 -> Total 0 (Silent)
+        const birdAmpMod = this.ctx.createGain();
+        birdAmpMod.gain.value = -0.02;
 
-        this.currentNodes = [bass, pad1, pad2, lfo, bassGain, padGain, filter, lfoGain];
+        breathLfo.connect(birdAmpMod);
+        birdAmpMod.connect(birdGain.gain);
+
+        birdSine.connect(birdGain);
+        birdGain.connect(this.musicGain);
+
+        // Start all
+        const nodes = [bass, pad1, pad2, filterLfo, birdSine, breathLfo];
+        nodes.forEach(n => n.start());
+
+        // Track nodes for cleanup
+        this.currentNodes = [
+            bass, pad1, pad2, filterLfo, birdSine, breathLfo,
+            bassGain, padGain, filter, filterLfoGain, birdGain,
+            bassAmpMod, birdAmpMod
+        ];
     }
 
     _stopDrone() {
