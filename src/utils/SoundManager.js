@@ -132,7 +132,7 @@ class SoundManager {
 
         // LFO for filter
         const lfo = this.ctx.createOscillator();
-        lfo.frequency.value = 0.1; // Slow
+        lfo.frequency.value = 0.5; // Slow
         const lfoGain = this.ctx.createGain();
         lfoGain.gain.value = 200;
         lfo.connect(lfoGain);
