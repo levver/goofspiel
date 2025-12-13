@@ -104,11 +104,11 @@ class SoundManager {
 
         // Start New
         if (this.targetTrack === 'menu') {
-            this._playMenuDrone();
+            this._playMenuDrone(1.0);
             this.currentTrack = 'menu';
         } else if (this.targetTrack === 'game') {
-            // "Play off the menu music" -> Base layer is the drone
-            this._playMenuDrone();
+            // "Play off the menu music" -> Base layer is the drone (Half volume)
+            this._playMenuDrone(0.5);
             this._startScheduler();
             this.currentTrack = 'game';
         }
@@ -160,18 +160,18 @@ class SoundManager {
         // beatNumber is 0..15 (one bar of 16th notes)
 
         // --- 1. KICK (User Pattern: Poly 7s) ---
-        if (this.stepCounter % 7 === 0) {
-            this._playKick(time);
-        }
+        // if (this.stepCounter % 7 === 0) {
+        //     this._playKick(time);
+        // }
 
         // --- 2. BASS (User Pattern: Poly 3s, Darker Tone) ---
         // D Phrygian Bass: D Eb F G A Bb C
         // Root (D) -> Flat 2nd (Eb) for tension
-        if (this.stepCounter % 3 === 0) {
-            // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
-            const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
-            this._playBass(time, note, 0.15); // Slightly longer sustain
-        }
+        // if (this.stepCounter % 3 === 0) {
+        // // Trigger root D or Eb for tension (Shifted down 2 semitones from E/F)
+        // const note = (beatNumber < 8) ? 73.42 : 77.78; // D2 vs Eb2
+        // this._playBass(time, note, 0.15); // Slightly longer sustain
+        // }
 
         // --- 3. SUSPENSE ATMOSPHERE (Randomized Arpeggios) ---
         // Play every ~3-5 seconds (randomized logic inside scheduler?)
@@ -285,15 +285,15 @@ class SoundManager {
 
             const gain = this.ctx.createGain();
             gain.gain.setValueAtTime(0, t);
-            gain.gain.linearRampToValueAtTime(0.15, t + 1.0); // Slow attack
-            gain.gain.linearRampToValueAtTime(0, t + 3.0); // Long release
+            gain.gain.linearRampToValueAtTime(0.15, t + 0.05); // Fast attack (Staccato)
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3); // Short decay
 
             osc.connect(filter);
             filter.connect(gain);
             gain.connect(this.musicGain);
 
             osc.start(t);
-            osc.stop(t + 4.0);
+            osc.stop(t + 0.35);
         });
     }
 
@@ -328,22 +328,22 @@ class SoundManager {
 
     // --- MENU AMBIENCE ---
 
-    _playMenuDrone() {
+    _playMenuDrone(volumeScale = 1.0) {
         // Shared LFO for "Breathing" / Syncing
         const breathLfo = this.ctx.createOscillator();
-        breathLfo.frequency.value = 0.15; // Slow breath
+        breathLfo.frequency.value = 0.1; // Slow breath
         breathLfo.start();
 
         // 1. Deep Bass Drone (Triangle)
         // "Lows of the triangle synced to highs of the sine"
         const bass = this._createOsc('triangle', 32.70, 0); // Low C
         const bassGain = this.ctx.createGain();
-        bassGain.gain.value = 0.2; // Base volume
+        bassGain.gain.value = 0.2 * volumeScale; // Base volume modulated by scale
 
-        // Modulate Bass Gain: breathe +/- 0.1
+        // Modulate Bass Gain: breathe +/- 0.1 (scaled)
         // LFO (0.15Hz) -> bassAmpMod -> bassGain.gain
         const bassAmpMod = this.ctx.createGain();
-        bassAmpMod.gain.value = 0.1;
+        bassAmpMod.gain.value = 0.1 * volumeScale;
         breathLfo.connect(bassAmpMod);
         bassAmpMod.connect(bassGain.gain);
 
@@ -356,11 +356,11 @@ class SoundManager {
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.value = 400;
+        filter.frequency.value = 300;
 
         // Filter LFO
         const filterLfo = this.ctx.createOscillator();
-        filterLfo.frequency.value = 0.08;
+        filterLfo.frequency.value = 0.05;
         const filterLfoGain = this.ctx.createGain();
         filterLfoGain.gain.value = 300;
 
@@ -368,7 +368,7 @@ class SoundManager {
         filterLfoGain.connect(filter.frequency);
 
         const padGain = this.ctx.createGain();
-        padGain.gain.value = 0.05;
+        padGain.gain.value = 0.05 * volumeScale;
 
         pad1.connect(filter);
         pad2.connect(filter);
@@ -381,11 +381,11 @@ class SoundManager {
         // "Highs of sine synced to lows of triangle" -> Inverse modulation
         const birdSine = this._createOsc('sine', 349.23, 0); // High C6 (Bird range)
         const birdGain = this.ctx.createGain();
-        birdGain.gain.value = 0.02; // Base volume (Quiet)
+        birdGain.gain.value = 0.02 * volumeScale; // Base volume (Quiet)
 
         // Modulate Bird Gain: Inverse of Bass
         const birdAmpMod = this.ctx.createGain();
-        birdAmpMod.gain.value = -0.02;
+        birdAmpMod.gain.value = -0.02 * volumeScale;
 
         breathLfo.connect(birdAmpMod);
         birdAmpMod.connect(birdGain.gain);
