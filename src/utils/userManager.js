@@ -1,4 +1,4 @@
-import { ref, get, update, child } from "firebase/database";
+import { ref, get, update, child, query, orderByChild, limitToLast } from "firebase/database";
 import { db, auth } from "./firebaseConfig";
 
 const STORAGE_KEY_USER_NAME = 'goofspiel_user_name';
@@ -47,6 +47,26 @@ export const updateUserProfile = async (userId, data) => {
         await update(ref(db, `users/${userId}`), data);
     } catch (error) {
         console.error("Error updating user profile:", error);
+    }
+};
+
+export const getLeaderboard = async () => {
+    try {
+        const usersRef = ref(db, 'users');
+        const q = query(usersRef, orderByChild('rating'), limitToLast(10));
+        const snapshot = await get(q);
+
+        if (snapshot.exists()) {
+            const users = [];
+            snapshot.forEach((childSnapshot) => {
+                users.unshift(childSnapshot.val()); // Unshift to get descending order (highest rating first)
+            });
+            return users;
+        }
+        return [];
+    } catch (error) {
+        console.error("Error fetching leaderboard:", error);
+        return [];
     }
 };
 

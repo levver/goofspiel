@@ -3,11 +3,13 @@ import { auth } from '../utils/firebaseConfig';
 import { signOut } from 'firebase/auth';
 import { Pyramid, Trophy, LogOut } from './Icons';
 import { LOBBY_TEXT } from '../utils/constants';
+import Leaderboard from './Leaderboard';
 
 const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStartTime, onFindMatch, onCancelSearch }) => {
     const [joinCode, setJoinCode] = useState('');
     const [isJoining, setIsJoining] = useState(false);
     const [profile, setProfile] = useState(null);
+    const [showLeaderboard, setShowLeaderboard] = useState(false);
 
     useEffect(() => {
         const loadProfile = async () => {
@@ -166,6 +168,25 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                     </form>
                 </div>
             </div>
+
+            {/* Leaderboard Overlay */}
+            {showLeaderboard && (
+                <Leaderboard onClose={() => setShowLeaderboard(false)} />
+            )}
+
+            {/* Floating Action Button for Leaderboard (if not in searching mode) */}
+            {!isSearching && (
+                <button
+                    onClick={() => setShowLeaderboard(true)}
+                    className="absolute top-4 right-4 p-3 bg-slate-800/80 hover:bg-slate-700 text-yellow-500 rounded-full border border-yellow-500/30 transition-all hover:scale-110 shadow-lg group z-50"
+                    title="Leaderboard"
+                >
+                    <Trophy className="w-6 h-6 drop-shadow-glow-yellow" />
+                    <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 px-2 py-1 bg-black/80 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                        Leaderboard
+                    </span>
+                </button>
+            )}
         </div>
     );
 };
