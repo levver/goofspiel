@@ -173,13 +173,11 @@ class SoundManager {
             this._playBass(time, note, 0.15); // Slightly longer sustain
         }
 
-        // --- 3. SUSPENSE CHORD (Occasional, spaced out) ---
-        // "Spaced out at least a couple seconds"
-        // At 160 BPM, 1 bar (16 steps) = 1.5s.
-        // Let's play every 32 steps (2 bars = 3s) or 48 steps (3 bars = 4.5s)
+        // --- 3. SUSPENSE ATMOSPHERE (Randomized Arpeggios) ---
+        // Play every ~3-5 seconds (randomized logic inside scheduler?)
+        // Or keep fixed interval but random content. Fixed interval is easier for now.
         if (this.stepCounter % 48 === 0) {
-            // Dark D Minor / Phrygian Swell: D, F, A
-            this._playChord(time, [293.66, 349.23, 440.00]);
+            this._playRandomAtmosphere(time);
         }
     }
 
@@ -253,11 +251,25 @@ class SoundManager {
         osc.stop(time + duration);
     }
 
-    _playChord(time, freqs) {
-        // Suspenseful Swell - Broken Chord
-        freqs.forEach((f, i) => {
-            const stagger = i * 0.5; // "Spaced out a bit" - 0.5s delay per note
-            const t = time + stagger;
+    _playRandomAtmosphere(time) {
+        // D Phrygian Scale pool: D2, Eb2, F2, G2, A2, Bb2, C3, D3
+        // Selecting a subset to create a random eerie phrase
+        const scale = [73.42, 77.78, 87.31, 98.00, 110.00, 116.54, 130.81, 146.83];
+
+        // Pick 3 to 5 random notes
+        const noteCount = 3 + Math.floor(Math.random() * 3);
+        const selectedFreqs = [];
+        for (let i = 0; i < noteCount; i++) {
+            selectedFreqs.push(scale[Math.floor(Math.random() * scale.length)]);
+        }
+
+        // Play them with random timing offsets
+        let currentOffset = 0;
+        selectedFreqs.forEach((f) => {
+            // Random spacing between 0.2s and 0.6s
+            const spacing = 0.2 + Math.random() * 0.4;
+            currentOffset += spacing;
+            const t = time + currentOffset;
 
             const osc = this.ctx.createOscillator();
             osc.type = 'sawtooth';
@@ -265,20 +277,23 @@ class SoundManager {
 
             const filter = this.ctx.createBiquadFilter();
             filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(200, t);
-            filter.frequency.exponentialRampToValueAtTime(3000, t + 1.5); // Open up
+            // Random filter movement for organic feel
+            const startCutoff = 200 + Math.random() * 200;
+            const endCutoff = 1500 + Math.random() * 2000;
+            filter.frequency.setValueAtTime(startCutoff, t);
+            filter.frequency.exponentialRampToValueAtTime(endCutoff, t + 2.0);
 
             const gain = this.ctx.createGain();
             gain.gain.setValueAtTime(0, t);
-            gain.gain.linearRampToValueAtTime(0.2, t + 1.0); // Slow attack
-            gain.gain.linearRampToValueAtTime(0, t + 2.5); // Long release
+            gain.gain.linearRampToValueAtTime(0.15, t + 1.0); // Slow attack
+            gain.gain.linearRampToValueAtTime(0, t + 3.0); // Long release
 
             osc.connect(filter);
             filter.connect(gain);
             gain.connect(this.musicGain);
 
             osc.start(t);
-            osc.stop(t + 3.0);
+            osc.stop(t + 4.0);
         });
     }
 
