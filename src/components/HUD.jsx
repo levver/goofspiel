@@ -25,6 +25,11 @@ const HUD = ({ gameData, currentLog, onForfeit, playerId }) => {
                 <span className="text-xl font-bold text-white font-mono leading-none drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]">
                     {gameData.round}<span className="text-slate-600 text-sm">/13</span>
                 </span>
+                <div className="flex items-center gap-1 mt-1 text-[10px] font-mono font-bold">
+                    <span className="text-cyan-400">YOU {gameData.host.id === (playerId === 'host' ? gameData.host.id : gameData.guest.id) ? gameData.host.matchScore || 0 : gameData.guest.matchScore || 0}</span>
+                    <span className="text-slate-600">-</span>
+                    <span className="text-fuchsia-400">OPP {gameData.host.id === (playerId === 'host' ? gameData.guest.id : gameData.host.id) ? gameData.host.matchScore || 0 : gameData.guest.matchScore || 0}</span>
+                </div>
             </div>
 
             <div className={`px-3 py-1 rounded text-xs font-mono font-bold tracking-wider transition-colors duration-300 ${logStyle}`}>

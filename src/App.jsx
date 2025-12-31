@@ -171,8 +171,8 @@ function App() {
             round: 1,
             prizeDeck: shuffle([...RANKS]),
             currentPrize: null,
-            host: { score: 0, hand: [...RANKS], bid: null, graveyard: [], time: INITIAL_TIME, id: getUserId(), name: getUserName() },
-            guest: { score: 0, hand: [...RANKS], bid: null, graveyard: [], time: INITIAL_TIME },
+            host: { score: 0, matchScore: 0, hand: [...RANKS], bid: null, graveyard: [], time: INITIAL_TIME, id: getUserId(), name: getUserName() },
+            guest: { score: 0, matchScore: 0, hand: [...RANKS], bid: null, graveyard: [], time: INITIAL_TIME },
             prizeGraveyard: [],
             lastAction: Date.now(),
             roundStart: serverTimestamp(),
@@ -259,6 +259,44 @@ function App() {
         });
     };
 
+    const startNextGame = async () => {
+        SoundManager.playClick();
+        if (!gameId || !gameData) return;
+
+        const newPrizeDeck = shuffle([...RANKS]);
+        const currentPrize = newPrizeDeck[0];
+        const remainingPrizeDeck = newPrizeDeck.slice(1);
+
+        const updates = {};
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.PLAYING;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/round`] = 1; // Reset round
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/prizeDeck`] = remainingPrizeDeck;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/currentPrize`] = currentPrize;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/prizeGraveyard`] = [];
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/tie`] = false;
+
+        // Reset Player States (Hands, Game Scores, Bids, Graveyards)
+        // KEEP Match Scores!
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = 0;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/hand`] = [...RANKS];
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/bid`] = null;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/graveyard`] = [];
+
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = 0;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/hand`] = [...RANKS];
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/bid`] = null;
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/graveyard`] = [];
+
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/log`] = {
+            msg: `GAME ${gameData.host.matchScore + gameData.guest.matchScore + 1} STARTED`,
+            type: LOG_TYPES.NEUTRAL
+        };
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/roundStart`] = serverTimestamp();
+
+        await update(ref(db), updates);
+        console.log('[GAME] Started next game in match');
+    };
+
     useEffect(() => {
         if (!gameId) return;
 
@@ -291,11 +329,7 @@ function App() {
         };
     }, [gameId, playerId]);
 
-    // Track local time in a ref for the heartbeat (so interval doesn't reset)
-    const localTimeRef = useRef(localTime);
-    useEffect(() => {
-        localTimeRef.current = localTime;
-    }, [localTime]);
+
 
     // Send Heartbeat - Independent interval
     useEffect(() => {
@@ -1013,20 +1047,58 @@ function App() {
                 nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/roundStart`] = serverTimestamp();
             } else {
                 // Game ends (either no more cards or early win)
-                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.END;
-                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/currentPrize`] = null;
 
-                // Set log message for early win
-                if (hostHasWon || guestHasWon) {
+                // Determine Game Winner and update Match Scores
+                const currentHostMatchScore = gameData.host.matchScore || 0;
+                const currentGuestMatchScore = gameData.guest.matchScore || 0;
+
+                let newHostMatchScore = currentHostMatchScore;
+                let newGuestMatchScore = currentGuestMatchScore;
+
+                if (hostHasWon) {
+                    newHostMatchScore += 1;
+                } else if (guestHasWon) {
+                    newGuestMatchScore += 1;
+                } else if (hostScore > guestScore) {
+                    newHostMatchScore += 1;
+                } else if (guestScore > hostScore) {
+                    newGuestMatchScore += 1;
+                } else {
+                    // Tie game - no one gets a point? or both? 
+                    // Usually Bo3 ignores ties or counts as draw. Let's do: no point awarded, replay game effectively.
+                    // But for Goofspiel, ties are rare if not effectively broken by timestamps.
+                    // If it's a DEAD TIE, play another game.
+                }
+
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/matchScore`] = newHostMatchScore;
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/matchScore`] = newGuestMatchScore;
+
+                // Check for Match Win
+                if (newHostMatchScore >= 2 || newGuestMatchScore >= 2) {
+                    nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.END;
+
+                    // Match Log
+                    const matchWinner = newHostMatchScore > newGuestMatchScore ? ROLES.HOST : ROLES.GUEST;
                     nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/log`] = {
-                        msg: hostHasWon ? MESSAGES.HOST_WINS_LEAD : MESSAGES.GUEST_WINS_LEAD,
-                        type: hostHasWon ? ROLES.HOST : ROLES.GUEST
+                        msg: matchWinner === ROLES.HOST ? "HOST WINS MATCH!" : "GUEST WINS MATCH!",
+                        type: matchWinner
+                    };
+
+                    // We let the useEffect trigger the rating updates, but we need to ensure handleGameEnd uses match scores?
+                    // actually, handleGameEnd processGameEndRatings uses the "hostScore" vs "guestScore" explicitly passed to it.
+                    // We need to change that flow.
+                    // For now, let's keep status END, and we will update handleGameEnd logic separately.
+                    handleGameEnd(newHostMatchScore, newGuestMatchScore);
+                } else {
+                    // Match continues -> Intermission
+                    nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.BETWEEN_GAMES;
+                    nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/log`] = {
+                        msg: hostHasWon || hostScore > guestScore ? "HOST WINS GAME" : "GUEST WINS GAME",
+                        type: LOG_TYPES.NEUTRAL
                     };
                 }
 
-                // Handle Game End (Rating Updates) - Only Host runs this
-                // REMOVED: Rely on useEffect to trigger this when status becomes END
-                // handleGameEnd(hostScore, guestScore);
+                nextUpdates[`${FIREBASE_PATHS.GAMES}/${gameId}/currentPrize`] = null;
             }
 
             console.log('[RESOLVE] Sending next round updates', nextUpdates);
@@ -1042,22 +1114,26 @@ function App() {
         const updates = {};
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.END;
 
-        // Award victory to connected player (me), loss to disconnected player
-        const myScore = 999;
-        const oppScore = 0;
+        // Award MATCH victory to connected player (me), loss to disconnected player
+        // 2-0 Match Score
+        const myMatchScore = 2;
+        const oppMatchScore = 0;
 
         if (isHost) {
-            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = myScore;
-            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = oppScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/matchScore`] = myMatchScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/matchScore`] = oppMatchScore;
+            // Optional: Set game score to show forfeiture? e.g. 999
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = 999;
         } else {
-            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = myScore;
-            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = oppScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/matchScore`] = myMatchScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/matchScore`] = oppMatchScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = 999;
         }
 
         await update(ref(db), updates);
 
-        // Update ratings (I win, opponent loses)
-        await handleGameEnd(isHost ? myScore : oppScore, isHost ? oppScore : myScore);
+        // Update ratings (I win match, opponent loses)
+        await handleGameEnd(isHost ? myMatchScore : oppMatchScore, isHost ? oppMatchScore : myMatchScore);
 
         // Clear localStorage
         localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
@@ -1217,22 +1293,26 @@ function App() {
         const updates = {};
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.END;
 
+        // I lose match (0-2)
+        const myMatchScore = 0;
+        const oppMatchScore = 2;
+
         if (isHost) {
-            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = myScore;
-            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = oppScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/matchScore`] = myMatchScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/matchScore`] = oppMatchScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = 999; // Cosmetic game score
         } else {
-            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = myScore;
-            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = oppScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/matchScore`] = myMatchScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/matchScore`] = oppMatchScore;
+            updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/score`] = 999;
         }
 
         await update(ref(db), updates);
 
-        // Update ratings (only host does this)
-        if (isHost) {
-            await handleGameEnd(isHost ? myScore : oppScore, isHost ? oppScore : myScore);
-        }
+        // Update ratings (I lose, opponent wins) - Force calculation
+        // Race condition note: If I forfeit, I should calculate. Host will eventually see it but might not calculate if status is already END.
+        await processGameEndRatings(gameId, gameData, isHost ? myMatchScore : oppMatchScore, isHost ? oppMatchScore : myMatchScore);
 
-        // Clear localStorage
         localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
 
         console.log('[FORFEIT] Game ended');
@@ -1297,6 +1377,7 @@ function App() {
             currentPrize: prizeDeck[0],
             host: iAmHost ? {
                 score: 0,
+                matchScore: 0,
                 hand: [...RANKS],
                 bid: null,
                 graveyard: [],
@@ -1305,6 +1386,7 @@ function App() {
                 name: getUserName()
             } : {
                 score: 0,
+                matchScore: 0,
                 hand: [...RANKS],
                 bid: null,
                 graveyard: [],
@@ -1314,6 +1396,7 @@ function App() {
             },
             guest: iAmHost ? {
                 score: 0,
+                matchScore: 0,
                 hand: [...RANKS],
                 bid: null,
                 graveyard: [],
@@ -1322,6 +1405,7 @@ function App() {
                 name: opponent.name
             } : {
                 score: 0,
+                matchScore: 0,
                 hand: [...RANKS],
                 bid: null,
                 graveyard: [],
@@ -1706,6 +1790,40 @@ function App() {
                     </div>
                 </div>
             )}
+
+            {/* Intermission Screen (Between Games) */}
+            {gameData.status === GAME_STATUS.BETWEEN_GAMES && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md animate-fade-in">
+                    <div className="flex flex-col items-center p-8 border border-slate-700 bg-black/60 rounded-2xl shadow-2xl max-w-sm w-full mx-4">
+                        <div className="text-cyan-400 font-mono text-sm tracking-widest mb-2">MATCH SCORE</div>
+                        <div className="flex items-center gap-6 mb-8">
+                            <div className="text-center">
+                                <div className="text-xs text-slate-500 mb-1">YOU</div>
+                                <div className="text-5xl font-black text-white">{isHost ? gameData.host.matchScore : gameData.guest.matchScore}</div>
+                            </div>
+                            <div className="text-2xl text-slate-600 font-black">-</div>
+                            <div className="text-center">
+                                <div className="text-xs text-slate-500 mb-1">OPP</div>
+                                <div className="text-5xl font-black text-slate-400">{isHost ? gameData.guest.matchScore : gameData.host.matchScore}</div>
+                            </div>
+                        </div>
+
+                        {isHost ? (
+                            <button
+                                onClick={startNextGame}
+                                className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-4 rounded-lg transition-all uppercase tracking-widest shadow-glow-cyan hover:scale-105"
+                            >
+                                START GAME {((gameData.host.matchScore || 0) + (gameData.guest.matchScore || 0)) + 1}
+                            </button>
+                        ) : (
+                            <div className="w-full bg-slate-800 text-cyan-400 font-bold py-4 rounded-lg uppercase tracking-widest text-center animate-pulse border border-slate-700">
+                                WAITING FOR HOST...
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
 
             {/* End Screen */}
             {showEndScreen && gameData.status === GAME_STATUS.END && (

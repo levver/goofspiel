@@ -16,9 +16,17 @@ const EndScreen = ({
     const hasAnimated = useRef(false);
 
     useEffect(() => {
-        if (!ratingUpdate || !ratingUpdate.previousRating || !ratingUpdate.rating) return;
-        if (hasAnimated.current) return;
+        console.log('[EndScreen] Rating Update Prop:', ratingUpdate);
+        if (!ratingUpdate || ratingUpdate.previousRating === undefined || ratingUpdate.rating === undefined) {
+            console.log('[EndScreen] Missing rating data, skipping animation');
+            return;
+        }
+        if (hasAnimated.current) {
+            console.log('[EndScreen] Already animated, skipping');
+            return;
+        }
 
+        console.log('[EndScreen] Starting animation...', ratingUpdate.previousRating, '->', ratingUpdate.rating);
         hasAnimated.current = true; // Mark as animated
 
         const start = ratingUpdate.previousRating;
