@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoundManager Debug Console</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --accent: #e94560;
+            --text: #eee;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: var(--accent);
+            margin-bottom: 1rem;
+        }
+
+        h2 {
+            border-bottom: 1px solid var(--accent);
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        h3 {
+            color: #888;
+            font-size: 0.9rem;
+            margin: 1rem 0 0.5rem 0;
+        }
+
+        .section {
+            margin-bottom: 2rem;
+        }
+
+        button {
+            background: var(--surface);
+            border: 1px solid var(--accent);
+            color: var(--text);
+            padding: 0.8rem 1.5rem;
+            margin: 0.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.green {
+            border-color: #22c55e;
+        }
+
+        button.green:hover {
+            background: #22c55e;
+        }
+
+        button.red {
+            border-color: #ef4444;
+        }
+
+        button.red:hover {
+            background: #ef4444;
+        }
+
+        button.yellow {
+            border-color: #eab308;
+        }
+
+        button.yellow:hover {
+            background: #eab308;
+            color: #000;
+        }
+
+        .status {
+            padding: 1rem;
+            background: var(--surface);
+            border-radius: 6px;
+            font-family: monospace;
+            margin-top: 1rem;
+        }
+
+        .log {
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+        }
+
+        .log-entry {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .log-entry.info {
+            color: #7ee787;
+        }
+
+        .log-entry.warn {
+            color: #f0883e;
+        }
+
+        #hmr-indicator {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.5rem 1rem;
+            background: #22c55e;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        #hmr-indicator.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="hmr-indicator">🔄 HMR Updated!</div>
+
+    <h1>🎵 SoundManager Debug Console</h1>
+
+    <div class="status">
+        <strong>Status:</strong> <span id="status">Not Initialized</span>
+    </div>
+
+    <div class="section">
+        <h2>Core Controls</h2>
+        <button id="btn-reload" style="background: #e94560;">🔄 Reload Module</button>
+        <button id="btn-init">Initialize / Resume</button>
+        <button id="btn-mute">Mute</button>
+        <button id="btn-unmute">Unmute</button>
+    </div>
+
+    <div class="section">
+        <h2>Music Tracks</h2>
+        <button id="btn-menu">Start Menu Music</button>
+        <button id="btn-game">Start Game Music</button>
+        <button id="btn-stop">Stop Music</button>
+    </div>
+
+    <div class="section">
+        <h2>Sound Effects</h2>
+
+        <h3>UI Sounds</h3>
+        <button id="btn-click">Play Click</button>
+        <button id="btn-slide">Play Card Slide</button>
+
+        <h3>Round Results</h3>
+        <button id="btn-win" class="green">Play Round Win</button>
+        <button id="btn-lose" class="red">Play Round Lose</button>
+        <button id="btn-tie" class="yellow">Play Tie</button>
+
+        <h3>Game End</h3>
+        <button id="btn-game-win" class="green">Play Game Win</button>
+        <button id="btn-game-lose" class="red">Play Game Lose</button>
+
+        <h3>Animations</h3>
+        <button id="btn-separator">Play Separator Break</button>
+    </div>
+
+    <div class="section">
+        <h2>Console Log</h2>
+        <div class="status log" id="log"></div>
+    </div>
+
+    <script type="module">
+        import SoundManager from './src/utils/SoundManager.js';
+        window.SoundManager = SoundManager;
+
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const hmrIndicator = document.getElementById('hmr-indicator');
+
+        function log(msg, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.prepend(entry);
+        }
+
+        function updateStatus() {
+            if (!SoundManager.ctx) {
+                statusEl.textContent = 'Not Initialized';
+            } else {
+                statusEl.textContent = `CTX: ${SoundManager.ctx.state} | Track: ${SoundManager.currentTrack || 'none'} | Muted: ${SoundManager.isMuted}`;
+            }
+        }
+
+        function wrapAction(name, fn) {
+            return async () => {
+                try {
+                    await fn();
+                    log(`${name} executed.`);
+                } catch (e) {
+                    log(`${name} FAILED: ${e.message}`, 'warn');
+                }
+                updateStatus();
+            };
+        }
+
+        // Force fresh module fetch by navigating to URL with timestamp
+        document.getElementById('btn-reload').onclick = () => {
+            SoundManager.stopMusic();
+            if (SoundManager.ctx) SoundManager.ctx.close();
+            window.location.href = window.location.pathname + '?t=' + Date.now();
+        };
+
+        // Core Controls
+        document.getElementById('btn-init').onclick = wrapAction('resume()', () => SoundManager.resume());
+        document.getElementById('btn-mute').onclick = wrapAction('mute(true)', () => SoundManager.mute(true));
+        document.getElementById('btn-unmute').onclick = wrapAction('mute(false)', () => SoundManager.mute(false));
+
+        // Music
+        document.getElementById('btn-menu').onclick = wrapAction('startMenuMusic()', () => SoundManager.startMenuMusic());
+        document.getElementById('btn-game').onclick = wrapAction('startGameMusic()', () => SoundManager.startGameMusic());
+        document.getElementById('btn-stop').onclick = wrapAction('stopMusic()', () => SoundManager.stopMusic());
+
+        // UI Sounds
+        document.getElementById('btn-click').onclick = wrapAction('playClick()', () => SoundManager.playClick());
+        document.getElementById('btn-slide').onclick = wrapAction('playCardSlide()', () => SoundManager.playCardSlide());
+
+        // Round Results
+        document.getElementById('btn-win').onclick = wrapAction('playWin()', () => SoundManager.playWin());
+        document.getElementById('btn-lose').onclick = wrapAction('playLose()', () => SoundManager.playLose());
+        document.getElementById('btn-tie').onclick = wrapAction('playTie()', () => SoundManager.playTie());
+
+        // Game End
+        document.getElementById('btn-game-win').onclick = wrapAction('playGameWin()', () => SoundManager.playGameWin());
+        document.getElementById('btn-game-lose').onclick = wrapAction('playGameLose()', () => SoundManager.playGameLose());
+
+        // Animations
+        document.getElementById('btn-separator').onclick = wrapAction('playSeparatorBreak()', () => SoundManager.playSeparatorBreak());
+
+        log('Debug console ready. Click "Initialize / Resume" to start audio.');
+        updateStatus();
+    </script>
+</body>
+
+</html>

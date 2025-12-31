@@ -1,12 +1,60 @@
-import React from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { RATING_ANIMATION_DURATION, RATING_ANIMATION_DELAY } from '../utils/constants';
 
 const EndScreen = ({
     myData,
     oppData,
     rematchStatus,
     onRequestRematch,
-    onDeclineRematch
+    onDeclineRematch,
+    ratingUpdate
 }) => {
+    // Rating Animation State
+    const [displayRating, setDisplayRating] = useState(ratingUpdate ? ratingUpdate.previousRating : null);
+    const [ratingChange, setRatingChange] = useState(0);
+    const [showThump, setShowThump] = useState(false);
+    const hasAnimated = useRef(false);
+
+    useEffect(() => {
+        if (!ratingUpdate || !ratingUpdate.previousRating || !ratingUpdate.rating) return;
+        if (hasAnimated.current) return;
+
+        hasAnimated.current = true; // Mark as animated
+
+        const start = ratingUpdate.previousRating;
+        const end = ratingUpdate.rating;
+        const diff = end - start;
+        setRatingChange(diff);
+
+        // Start animation after a short delay
+        const delayTimer = setTimeout(() => {
+            const duration = RATING_ANIMATION_DURATION;
+            const startTime = Date.now();
+
+            const animate = () => {
+                const now = Date.now();
+                const progress = Math.min((now - startTime) / duration, 1);
+
+                // Ease out quart
+                const ease = 1 - Math.pow(1 - progress, 4);
+
+                const current = Math.round(start + (diff * ease));
+                setDisplayRating(current);
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    setDisplayRating(end);
+                    setShowThump(true); // Trigger thump effect at the end
+                }
+            };
+
+            requestAnimationFrame(animate);
+        }, RATING_ANIMATION_DELAY);
+
+        return () => clearTimeout(delayTimer);
+    }, [ratingUpdate]);
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-md animate-pop-in p-8">
             <div className="flex flex-col items-center w-full max-w-sm border border-slate-700 rounded-2xl p-8 bg-black/50 shadow-2xl">
@@ -15,7 +63,36 @@ const EndScreen = ({
                         myData.score < oppData.score ? <span className="text-fuchsia-500 drop-shadow-glow-purple">DEFEAT</span> :
                             "DRAW"}
                 </h1>
-                <div className="w-full h-px bg-gradient-to-r from-transparent via-slate-500 to-transparent my-6"></div>
+
+                {/* Rating Display */}
+                {ratingUpdate && (
+                    <div className="flex flex-col items-center justify-center my-4 h-24">
+                        <div className="text-slate-400 text-xs uppercase tracking-widest mb-1">RATING UPDATE</div>
+                        <div className={`text-6xl font-black font-mono relative transition-colors duration-300 ${ratingChange > 0 ? 'text-green-400' : ratingChange < 0 ? 'text-red-400' : 'text-slate-200'}`}>
+                            {displayRating !== null ? Math.round(displayRating) : '---'}
+
+                            {/* Thump Effect Overlay */}
+                            {showThump && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <div className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-20"></div>
+                                    <div className="animate-thump absolute text-current opacity-0 transform scale-150">
+                                        {Math.round(displayRating)}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        {showThump && ratingChange !== 0 && (
+                            <div className={`text-sm font-bold animate-fade-in-up ${ratingChange > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {ratingChange > 0 ? '+' : ''}{Math.round(ratingChange)}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {!ratingUpdate && (
+                    <div className="w-full h-px bg-gradient-to-r from-transparent via-slate-500 to-transparent my-6"></div>
+                )}
+
                 <div className="flex justify-between w-full px-4 mb-8">
                     <div className="text-center">
                         <div className="text-xs text-slate-500 mb-1">YOUR SCORE</div>

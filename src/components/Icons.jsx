@@ -1,3 +1,3 @@
-import { Cpu, Hexagon, Pyramid, Database, Activity, Clock, Trophy, LogOut, Mail, Lock, Chrome } from 'lucide-react';
+import { Cpu, Hexagon, Pyramid, Database, Activity, Clock, Trophy, LogOut, Mail, Lock, Chrome, X } from 'lucide-react';
 
-export { Cpu, Hexagon, Pyramid, Database, Activity, Clock, Trophy, LogOut, Mail, Lock, Chrome };
+export { Cpu, Hexagon, Pyramid, Database, Activity, Clock, Trophy, LogOut, Mail, Lock, Chrome, X };

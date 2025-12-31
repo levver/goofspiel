@@ -12,6 +12,8 @@ export const PRIZE_ANIMATION_DELAY = 500;
 export const PRIZE_ANIMATION_DURATION = 1000; // CSS transition duration in ms
 export const PRIZE_ANIMATION_CLEANUP = 500;
 export const PROGRESS_BAR_UPDATE_DELAY = 800;
+export const RATING_ANIMATION_DURATION = 1500;
+export const RATING_ANIMATION_DELAY = 500;
 export const THEME = {
     prize: {
         name: 'NEXUS_CORE',
@@ -91,7 +93,7 @@ export const LOBBY_TEXT = {
     JOIN_EXISTING: "OR JOIN EXISTING",
     ENTER_CODE_PLACEHOLDER: "ENTER ACCESS CODE",
     CONNECTING: "CONNECTING...",
-    JOIN_GAME: "JOIN GAME"
+    JOIN_GAME: "JOIN"
 };
 
 export const AUTH_TEXT = {

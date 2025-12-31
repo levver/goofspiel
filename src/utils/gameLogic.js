@@ -1,6 +1,8 @@
-import { ref, update } from "firebase/database";
-import { db } from "./firebaseConfig";
-import { GAME_STATUS, FIREBASE_PATHS, TIMINGS } from "./constants";
+import { ref, update, get, serverTimestamp } from "firebase/database";
+import { db, auth } from "./firebaseConfig";
+import { GAME_STATUS, FIREBASE_PATHS, TIMINGS, ROLES, MESSAGES, LOG_TYPES } from "./constants";
+import { calculateNewRating } from "./glicko";
+import { getUserProfile, updateUserProfile } from "./userManager";
 
 // Helper function to generate short game IDs (6 characters, alphanumeric)
 export const generateShortGameId = () => {
@@ -12,6 +14,144 @@ export const generateShortGameId = () => {
     return id;
 };
 
+/**
+ * processes rating updates for a finished game
+ * @param {string} gameId 
+ * @param {object} gameData 
+ * @param {number} hostScore 
+ * @param {number} guestScore 
+ */
+export const processGameEndRatings = async (gameId, gameData, hostScore, guestScore) => {
+    // Prevent double processing if already done
+    if (gameData.ratingUpdates) return;
+
+    const hostId = gameData.host.id;
+    const guestId = gameData.guest.id;
+
+    if (!hostId || !guestId) return;
+
+    const p1 = await getUserProfile(hostId);
+    const p2 = await getUserProfile(guestId);
+
+    let outcome = 0.5;
+    if (hostScore > guestScore) outcome = 1;
+    else if (guestScore > hostScore) outcome = 0;
+
+    const newP1 = calculateNewRating(p1, p2, outcome);
+    const newP2 = calculateNewRating(p2, p1, 1 - outcome);
+
+    // Store rating updates in the game object
+    const ratingUpdates = {
+        host: {
+            name: p1.name || gameData.host.name || 'Unknown',
+            gamesPlayed: (p1.gamesPlayed || 0) + 1,
+            gamesWon: (p1.gamesWon || 0) + (outcome === 1 ? 1 : 0),
+            rating: newP1.rating,
+            previousRating: p1.rating, // Store previous rating
+            rd: newP1.rd,
+            vol: newP1.vol
+        },
+        guest: {
+            name: p2.name || gameData.guest.name || 'Unknown',
+            gamesPlayed: (p2.gamesPlayed || 0) + 1,
+            gamesWon: (p2.gamesWon || 0) + (outcome === 0 ? 1 : 0),
+            rating: newP2.rating,
+            previousRating: p2.rating, // Store previous rating
+            rd: newP2.rd,
+            vol: newP2.vol
+        }
+    };
+
+    const updates = {};
+    updates[`${FIREBASE_PATHS.GAMES}/${gameId}/ratingUpdates`] = ratingUpdates;
+
+    await update(ref(db), updates);
+
+    // Also update the users' profiles directly here to ensure consistency
+    // SECURITY FIX: Only update the current user's profile. The other user will update theirs
+    // when they log in / view the game result, handled by App.jsx.
+    // Trying to update another user's profile usually fails due to Firebase Rules.
+
+    const currentUserId = auth.currentUser?.uid;
+    const promises = [];
+
+    if (currentUserId === hostId) {
+        promises.push(updateUserProfile(hostId, ratingUpdates.host));
+    }
+
+    if (currentUserId === guestId) {
+        promises.push(updateUserProfile(guestId, ratingUpdates.guest));
+    }
+
+    const results = await Promise.allSettled(promises);
+
+    results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+            console.error(`[RATING] Failed to update profile for ${index === 0 ? 'host' : 'guest'}:`, result.reason);
+        }
+    });
+
+    console.log('[RATING] Processed ratings:', ratingUpdates);
+
+    return ratingUpdates;
+};
+
+export const resolveGame = async (gameId, gameData) => {
+    console.log('[CLEANUP] Resolving stuck game:', gameId);
+
+    const host = gameData.host;
+    const guest = gameData.guest;
+    const hostScore = parseInt(host.score || 0, 10);
+    const guestScore = parseInt(guest.score || 0, 10);
+
+    const hostLastSeen = gameData.presence?.host?.lastSeen || gameData.presence?.host?.disconnectedAt || 0;
+    const guestLastSeen = gameData.presence?.guest?.lastSeen || gameData.presence?.guest?.disconnectedAt || 0;
+
+    let msg = "GAME ENDED";
+    let type = LOG_TYPES.NEUTRAL;
+
+    let hostWins = false;
+    let guestWins = false;
+
+    if (hostScore > guestScore) {
+        hostWins = true;
+    } else if (guestScore > hostScore) {
+        guestWins = true;
+    } else {
+        // Tied score - Tiebreaker: Last Seen
+        // The one who stayed longer (later timestamp) wins
+        if (hostLastSeen > guestLastSeen) {
+            hostWins = true;
+            console.log('[CLEANUP] Scores tied, Host wins by timestamps', hostLastSeen, '>', guestLastSeen);
+        } else if (guestLastSeen > hostLastSeen) {
+            guestWins = true;
+            console.log('[CLEANUP] Scores tied, Guest wins by timestamps', guestLastSeen, '>', hostLastSeen);
+        } else {
+            console.log('[CLEANUP] Scores tied and timestamps equal (or missing), pure tie');
+        }
+    }
+
+    if (hostWins) {
+        msg = "HOST WINS (RESOLVED)";
+        type = ROLES.HOST;
+    } else if (guestWins) {
+        msg = "GUEST WINS (RESOLVED)";
+        type = ROLES.GUEST;
+    } else {
+        msg = MESSAGES.TIED;
+    }
+
+    // Update Game
+    const updates = {};
+    updates[`${FIREBASE_PATHS.GAMES}/${gameId}/status`] = GAME_STATUS.END;
+    updates[`${FIREBASE_PATHS.GAMES}/${gameId}/log`] = { msg, type };
+
+    await update(ref(db), updates);
+
+    // Calculate Ratings
+    await processGameEndRatings(gameId, gameData, hostScore, guestScore);
+};
+
 export const checkAndCleanupGame = async (gameId, gameData) => {
     if (!gameData) return false;
 
@@ -21,7 +161,6 @@ export const checkAndCleanupGame = async (gameId, gameData) => {
     }
 
     // Only check for abandonment in PLAYING games
-    // WAITING games haven't started yet, so one player being missing is expected
     if (gameData.status !== GAME_STATUS.PLAYING && gameData.status !== GAME_STATUS.RESOLVING) {
         return true;
     }
@@ -55,14 +194,41 @@ export const checkAndCleanupGame = async (gameId, gameData) => {
         if (hostTimeSince > TIMINGS.ABANDONMENT_TIMEOUT && guestTimeSince > TIMINGS.ABANDONMENT_TIMEOUT) {
             console.log('[CLEANUP] Game abandoned (both offline > 60s):', gameId);
 
-            // Mark as abandoned
-            await update(ref(db, `${FIREBASE_PATHS.GAMES}/${gameId}`), {
-                status: GAME_STATUS.ABANDONED
-            });
+            // RESOLVE THE GAME INSTEAD OF JUST ABANDONING
+            await resolveGame(gameId, gameData);
 
             return false;
         }
     }
 
     return true;
+};
+
+export const checkUnresolvedGames = async (userId) => {
+    console.log('[CLEANUP] Checking for unresolved games for user:', userId);
+    const gamesRef = ref(db, FIREBASE_PATHS.GAMES);
+
+    try {
+        const snapshot = await get(gamesRef);
+        if (!snapshot.exists()) return;
+
+        const allGames = snapshot.val();
+        const promises = [];
+
+        for (const [gameId, game] of Object.entries(allGames)) {
+            // Check if game is relevant to user
+            const isParticipant = game.host?.id === userId || game.guest?.id === userId;
+
+            if (isParticipant) {
+                // Use the shared check/cleanup logic
+                // This checks if it's stale and resolves it if so
+                promises.push(checkAndCleanupGame(gameId, game));
+            }
+        }
+
+        await Promise.all(promises);
+
+    } catch (e) {
+        console.error("Error checking unresolved games:", e);
+    }
 };

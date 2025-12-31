@@ -61,7 +61,7 @@ const DataChip = ({
             <div className="flex flex-col items-end">
                 <span className={`text-[8px] font-mono opacity-70 ${theme.color}`}>{label}</span>
                 <div className={`h-0.5 w-full bg-slate-800 mt-0.5 overflow-hidden rounded-full`}>
-                    <div className={`h-full ${theme.bg.replace('/10', '')} w-[${(rank / 13) * 100}%]`}></div>
+                    <div className={`h-full ${theme.bg.replace('/10', '')}`} style={{ width: `${(rank / 13) * 100}%` }}></div>
                 </div>
             </div>
         </button>

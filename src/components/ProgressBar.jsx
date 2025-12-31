@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PROGRESS_BAR_UPDATE_DELAY } from '../utils/constants';
+import SoundManager from '../utils/SoundManager';
 
 const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize, winner, tie }) => {
     const [displayScores, setDisplayScores] = useState({ my: myScore, opp: oppScore, graveyard: prizeGraveyard });
@@ -32,12 +33,16 @@ const ProgressBar = ({ myScore, oppScore, prizeGraveyard, status, currentPrize, 
             setTimeout(() => {
                 // After shake, shatter
                 setAnimationPhase('shatter');
+                SoundManager.playSeparatorBreak();
 
                 setTimeout(() => {
                     // After shatter, overflow
                     setAnimationPhase('overflow');
                 }, 300); // Shatter duration
             }, 500); // Shake duration
+        } else if (!winner && animationPhase !== null) {
+            // Reset if winner is cleared (e.g. new game start)
+            setAnimationPhase(null);
         }
     }, [winner, animationPhase]);
 

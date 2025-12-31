@@ -34,12 +34,14 @@ import { shuffle } from './utils/helpers';
 import { db } from './utils/firebaseConfig';
 import { ref, set, onValue, update, push, child, get, serverTimestamp, onDisconnect, remove } from "firebase/database";
 import { getUserId, getUserName, getUserProfile, updateUserProfile } from './utils/userManager';
-import { calculateNewRating } from './utils/glicko';
+
 import { auth } from './utils/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { findBestMatch, isHigherRated } from './utils/matchmaking';
 import { setupPresence, sendHeartbeat, cleanupPresence } from './utils/presence';
-import { generateShortGameId, checkAndCleanupGame } from './utils/gameLogic';
+import { generateShortGameId, checkAndCleanupGame, checkUnresolvedGames, processGameEndRatings } from './utils/gameLogic';
+import SoundManager from './utils/SoundManager';
+
 
 function App() {
     // --- Firebase State ---
@@ -57,6 +59,16 @@ function App() {
     const [animationProps, setAnimationProps] = useState(null);
     const [localTime, setLocalTime] = useState(INITIAL_TIME);
     const [oppLocalTime, setOppLocalTime] = useState(INITIAL_TIME);
+
+    // Refs for timer logic to avoid dependency cycles and interval resets
+    const localTimeRef = useRef(INITIAL_TIME);
+    const oppLocalTimeRef = useRef(INITIAL_TIME);
+
+    // Keep refs in sync with state for heartbeat consumption
+    useEffect(() => {
+        localTimeRef.current = localTime;
+    }, [localTime]);
+
     const [rematchStatus, setRematchStatus] = useState(null); // REMATCH_STATUS.WAITING, REMATCH_STATUS.OPPONENT_REQUESTED, REMATCH_STATUS.DECLINED, REMATCH_STATUS.LEFT
     const [isSearching, setIsSearching] = useState(false);
     const [searchStartTime, setSearchStartTime] = useState(null);
@@ -65,11 +77,40 @@ function App() {
     const [showEndScreen, setShowEndScreen] = useState(false);
     const playerSlotRef = useRef(null);
 
+    // --- Audio Logic ---
+    useEffect(() => {
+        // Initialize audio on first user interaction if possible, or just rely on lazy init
+        const handleInteraction = () => {
+            SoundManager.resume();
+            window.removeEventListener('click', handleInteraction);
+        };
+        window.addEventListener('click', handleInteraction);
+        return () => window.removeEventListener('click', handleInteraction);
+    }, []);
+
+    // Manage Background Music based on state
+    useEffect(() => {
+        if (!gameData) {
+            // Main Menu (Lobby)
+            SoundManager.startMenuMusic();
+        } else if (gameData.status === GAME_STATUS.WAITING) {
+            SoundManager.startMenuMusic();
+        } else if (gameData.status === GAME_STATUS.PLAYING || gameData.status === GAME_STATUS.RESOLVING) {
+            SoundManager.startGameMusic();
+        } else if (gameData.status === GAME_STATUS.END) {
+            SoundManager.startMenuMusic(); // Back to chill
+        }
+    }, [gameData?.status]);
+
+
     // --- Firebase Auth Logic ---
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setCurrentUser(user);
             setAuthLoading(false);
+            if (user) {
+                checkUnresolvedGames(user.uid);
+            }
         });
         return unsubscribe;
     }, []);
@@ -122,6 +163,7 @@ function App() {
     // --- Firebase Logic ---
 
     const createGame = () => {
+        SoundManager.playClick();
         const newGameId = generateShortGameId();
 
         const initialGameData = {
@@ -166,6 +208,7 @@ function App() {
     };
 
     const joinGame = (code) => {
+        SoundManager.playClick();
         const gameRef = ref(db, `${FIREBASE_PATHS.GAMES}/${code}`);
 
         // Check if game exists
@@ -259,6 +302,7 @@ function App() {
         if (!gameId || !playerId) return;
 
         // Send heartbeat every 5 seconds
+        // IMPORTANT: Use localTimeRef.current to avoid resetting the interval when time changes
         const heartbeatInterval = setInterval(() => {
             sendHeartbeat(gameId, playerId, localTimeRef.current);
         }, TIMINGS.HEARTBEAT_INTERVAL);
@@ -356,6 +400,18 @@ function App() {
     // Sync local time with server time ONLY when round changes
     // We do NOT want to sync constantly because we are the source of truth for our own time
     useEffect(() => {
+        // Sync my time only if I don't have a local bid yet (timer running) OR it's a new round
+        if (gameData?.round !== undefined) {
+            // For opponent, we ALWAYS sync from server because that's our source of truth for them
+            // EXCEPT when they have acted continuously. We trust our local countdown for smoothness
+            // but re-sync if the deviation is large? actually, let's just sync safely.
+            // Simpler approach: Sync once per round start.
+        }
+
+        // We use a separate effect for precise control or combine here.
+        // Let's rely on the previous logic but made stricter.
+
+        // Initial / Round sync
         if (myData && myData.time !== undefined) {
             // Only force update if it's potentially a new game or round reset (time is high)
             // or if we are way out of sync (e.g. page reload)
@@ -378,7 +434,8 @@ function App() {
         }
     }, [oppData?.time]);
 
-    // Timer Tick Logic
+
+    // Timer Tick Logic - FIXED
     useEffect(() => {
         let interval = null;
         if (gameData?.status === GAME_STATUS.PLAYING) {
@@ -586,6 +643,9 @@ function App() {
                 // Determine if I won
                 const iWon = currentLog.type === playerId;
 
+                if (iWon) SoundManager.playWin();
+                else SoundManager.playLose();
+
                 // Get prize rank from message "WON 10" or "WON (+10)"
                 const match = currentLog.msg.match(/(\d+)/);
                 const prizeRank = match ? parseInt(match[1]) : null;
@@ -673,6 +733,7 @@ function App() {
     useEffect(() => {
         if (gameData?.tie) {
             setTieAnimation(true);
+            SoundManager.playTie();
 
             // Clear any existing timer
             if (tieTimerRef.current) clearTimeout(tieTimerRef.current);
@@ -835,28 +896,45 @@ function App() {
         }
     }, [gameData?.status, showEndScreen]);
 
-    // --- Host-Authoritative Round Resolution ---
-    // This function is ONLY called by the Host player.
-    // It calculates the outcome of the round, updates scores, and handles the transition to the next round.
-    // The Guest player simply listens for these updates.
-    const resolveRound = (hostBid, guestBid) => {
+    // Play game end music when game ends
+    useEffect(() => {
+        if (gameData?.status === GAME_STATUS.END && myData?.score !== undefined && oppData?.score !== undefined) {
+            // Delay to sync with animation
+            const timer = setTimeout(() => {
+                if (myData.score > oppData.score) {
+                    SoundManager.playGameWin();
+                } else if (myData.score < oppData.score) {
+                    SoundManager.playGameLose();
+                }
+                // If tied, no special end music (already played tie sound during the tie round)
+            }, 800); // After shake phase starts
+            return () => clearTimeout(timer);
+        }
+    }, [gameData?.status, myData?.score, oppData?.score]);
+
+    // --- Round Resolution ---
+    const resolveRound = () => {
         if (!gameData) return;
 
         console.log('[RESOLVE] Starting round resolution', {
             round: gameData.round,
-            hostBid: hostBid,
-            guestBid: guestBid,
+            hostBid: gameData.host.bid,
+            guestBid: gameData.guest.bid,
             prize: gameData.currentPrize,
             currentScores: { host: gameData.host.score, guest: gameData.guest.score }
         });
 
+        const hostBid = gameData.host.bid;
+        const guestBid = gameData.guest.bid;
+
         const prize = gameData.currentPrize;
 
-        let hostScore = gameData.host.score;
-        let guestScore = gameData.guest.score;
         let msg = MESSAGES.TIED;
         let type = "warning";
         const isTie = hostBid === guestBid;
+
+        let hostScore = gameData.host.score;
+        let guestScore = gameData.guest.score;
 
         if (hostBid > guestBid) {
             hostScore += prize;
@@ -947,7 +1025,8 @@ function App() {
                 }
 
                 // Handle Game End (Rating Updates) - Only Host runs this
-                handleGameEnd(hostScore, guestScore);
+                // REMOVED: Rely on useEffect to trigger this when status becomes END
+                // handleGameEnd(hostScore, guestScore);
             }
 
             console.log('[RESOLVE] Sending next round updates', nextUpdates);
@@ -956,7 +1035,7 @@ function App() {
     };
 
     const handleOpponentDisconnect = async () => {
-        if (playerId !== ROLES.HOST) return; // Only host ends the game
+        // Removed host-only check to allow guest to claim win if host drops
 
         console.log('[DISCONNECT] Ending game due to opponent disconnect');
 
@@ -987,41 +1066,27 @@ function App() {
     };
 
     const handleGameEnd = async (hostScore, guestScore) => {
-        if (playerId !== ROLES.HOST) return;
+        // Race condition handling:
+        // If I am Guest, I should ONLY calculate ratings if the Host has been disconnected for the timeout duration.
+        // Otherwise, I should let the Host handle it to avoid double-writes or race conditions.
+        if (playerId !== ROLES.HOST) {
+            const hostPresence = gameData?.presence?.host;
+            const disconnectTime = hostPresence?.disconnectedAt;
+            const isHostOffline = !hostPresence?.online;
+
+            if (!isHostOffline || !disconnectTime || (Date.now() - disconnectTime < TIMINGS.DISCONNECT_TIMEOUT)) {
+                console.log('[RATING] Guest skipping rating calculation (Host is active or not timed out)');
+                return;
+            }
+        }
 
         const hostId = gameData.host.id;
         const guestId = gameData.guest.id;
 
         if (!hostId || !guestId) return;
 
-        const p1 = await getUserProfile(hostId);
-        const p2 = await getUserProfile(guestId);
-
-        let outcome = 0.5;
-        if (hostScore > guestScore) outcome = 1;
-        else if (guestScore > hostScore) outcome = 0;
-
-        const newP1 = calculateNewRating(p1, p2, outcome);
-        const newP2 = calculateNewRating(p2, p1, 1 - outcome);
-
-        // Store rating updates in the game object
-        // Each player will read their own stats and update their profile
-        await update(ref(db, `${FIREBASE_PATHS.GAMES}/${gameId}/ratingUpdates`), {
-            host: {
-                gamesPlayed: (p1.gamesPlayed || 0) + 1,
-                gamesWon: (p1.gamesWon || 0) + (outcome === 1 ? 1 : 0),
-                rating: newP1.rating,
-                rd: newP1.rd,
-                vol: newP1.vol
-            },
-            guest: {
-                gamesPlayed: (p2.gamesPlayed || 0) + 1,
-                gamesWon: (p2.gamesWon || 0) + (outcome === 0 ? 1 : 0),
-                rating: newP2.rating,
-                rd: newP2.rd,
-                vol: newP2.vol
-            }
-        });
+        // Use centralized rating processing
+        await processGameEndRatings(gameId, gameData, hostScore, guestScore);
     };
 
     const handleRequestRematch = () => {
@@ -1326,6 +1391,8 @@ function App() {
 
     const handleCardClick = (rank, e) => {
         if (!gameData || gameData.status !== GAME_STATUS.PLAYING || animatingCard) return;
+
+        SoundManager.playCardSlide();
 
         // Check if already bid
         const myData = playerId === 'host' ? gameData.host : gameData.guest;
@@ -1648,6 +1715,7 @@ function App() {
                     rematchStatus={rematchStatus}
                     onRequestRematch={handleRequestRematch}
                     onDeclineRematch={handleDeclineRematch}
+                    ratingUpdate={gameData.ratingUpdates ? (isHost ? gameData.ratingUpdates.host : gameData.ratingUpdates.guest) : null}
                 />
             )}
             {/* Animating Prize Card */}
