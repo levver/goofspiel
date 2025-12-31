@@ -152,6 +152,9 @@ function App() {
         set(ref(db, `${FIREBASE_PATHS.GAMES}/${newGameId}`), initialGameData);
         setGameId(newGameId);
         setPlayerId(ROLES.HOST);
+        setLocalTime(INITIAL_TIME);
+        setOppLocalTime(INITIAL_TIME);
+        setGameData(null);
 
         // Save to localStorage for reconnection
         localStorage.setItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME, JSON.stringify({
@@ -193,6 +196,9 @@ function App() {
 
                 setGameId(code);
                 setPlayerId(role);
+                setLocalTime(INITIAL_TIME);
+                setOppLocalTime(INITIAL_TIME);
+                setGameData(null);
 
                 // Save to localStorage for reconnection
                 localStorage.setItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME, JSON.stringify({
@@ -230,23 +236,37 @@ function App() {
         return () => unsubscribe();
     }, [gameId]);
 
-    // Setup presence tracking and heartbeat
+    // Setup presence tracking - ONLY run on mount/change of gameId/playerId
     useEffect(() => {
         if (!gameId || !playerId) return;
 
         // Setup presence on connect
         setupPresence(gameId, playerId);
 
+        return () => {
+            cleanupPresence(gameId, playerId);
+        };
+    }, [gameId, playerId]);
+
+    // Track local time in a ref for the heartbeat (so interval doesn't reset)
+    const localTimeRef = useRef(localTime);
+    useEffect(() => {
+        localTimeRef.current = localTime;
+    }, [localTime]);
+
+    // Send Heartbeat - Independent interval
+    useEffect(() => {
+        if (!gameId || !playerId) return;
+
         // Send heartbeat every 5 seconds
         const heartbeatInterval = setInterval(() => {
-            sendHeartbeat(gameId, playerId, localTime);
+            sendHeartbeat(gameId, playerId, localTimeRef.current);
         }, TIMINGS.HEARTBEAT_INTERVAL);
 
         return () => {
             clearInterval(heartbeatInterval);
-            cleanupPresence(gameId, playerId);
         };
-    }, [gameId, playerId, localTime]);
+    }, [gameId, playerId]);
 
     // Detect when matched into a game (for the waiting user)
     useEffect(() => {
@@ -333,29 +353,51 @@ function App() {
         }
     }, [oppBid, gameData?.status]);
 
-    // Sync local time with server time when round changes or game starts
+    // Sync local time with server time ONLY when round changes
+    // We do NOT want to sync constantly because we are the source of truth for our own time
     useEffect(() => {
         if (myData && myData.time !== undefined) {
-            setLocalTime(myData.time);
+            // Only force update if it's potentially a new game or round reset (time is high)
+            // or if we are way out of sync (e.g. page reload)
+            // Checking if time > localTime is a rough heuristic for "reset"
+            if (myData.time > localTimeRef.current + 5) {
+                setLocalTime(myData.time);
+            }
         }
-        setOppLocalTime(oppData.time);
-    }, [gameData?.round, myData?.time, oppData?.time]);
+    }, [gameData?.round, myData?.time]);
+
+    // Sync opponent time continuously (with checks to prevent stutter)
+    useEffect(() => {
+        if (oppData && oppData.time !== undefined) {
+            const diff = Math.abs(oppData.time - oppLocalTime);
+            // If opponent time deviates significantly, sync it.
+            // Otherwise trust our local tick to be smoother.
+            if (diff > 2) {
+                setOppLocalTime(oppData.time);
+            }
+        }
+    }, [oppData?.time]);
 
     // Timer Tick Logic
     useEffect(() => {
         let interval = null;
         if (gameData?.status === GAME_STATUS.PLAYING) {
             interval = setInterval(() => {
-                if (!myData?.bid && localTime > 0) {
-                    setLocalTime(t => Math.max(0, t - 1));
-                }
-                if (oppLocalTime > 0) {
-                    setOppLocalTime(t => Math.max(0, t - 1));
-                }
+                // Tick my time
+                setLocalTime(t => {
+                    if (!myBid && t > 0) return t - 1;
+                    return t;
+                });
+
+                // Tick opponent time
+                setOppLocalTime(t => {
+                    if (t > 0 && !oppBid) return t - 1;
+                    return t;
+                });
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [gameData?.status, myData?.bid, localTime, oppLocalTime]);
+    }, [gameData?.status, myBid, oppBid]);
 
     // Monitor Opponent Disconnect
     useEffect(() => {
@@ -438,6 +480,9 @@ function App() {
 
             // Transition to new game
             setGameId(rematch.newGameId);
+            setLocalTime(INITIAL_TIME);
+            setOppLocalTime(INITIAL_TIME);
+            setGameData(null);
             setRematchStatus(null);
 
             // Update localStorage
@@ -470,9 +515,10 @@ function App() {
         const oppData = playerId === ROLES.HOST ? gameData.guest : gameData.host;
 
         // Check if either player timed out
-        if (localTime <= 0 || oppLocalTime <= 0) {
-            const iTimedOut = localTime <= 0;
-            const oppTimedOut = oppLocalTime <= 0;
+        // Only timeout if they haven't bid yet
+        if ((localTime <= 0 && !myData.bid) || (oppLocalTime <= 0 && !oppBid)) {
+            const iTimedOut = localTime <= 0 && !myData.bid;
+            const oppTimedOut = oppLocalTime <= 0 && !oppBid;
 
             // Only host processes the timeout
             if (playerId === ROLES.HOST) {
@@ -517,7 +563,7 @@ function App() {
                 localStorage.removeItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME);
             }
         }
-    }, [gameData, gameId, playerId, localTime, oppLocalTime, isHost]);
+    }, [gameData, gameId, playerId, localTime, oppLocalTime, isHost, myData, oppBid]);
 
     // Prize Animation Effect
     useEffect(() => {
@@ -766,7 +812,7 @@ function App() {
 
         if (gameData.status === GAME_STATUS.PLAYING && gameData.host.bid && gameData.guest.bid) {
             // Both players have bid, trigger resolution
-            resolveRound();
+            resolveRound(gameData.host.bid, gameData.guest.bid);
         }
 
         // Check for game end (e.g. forfeit) to trigger rating updates
@@ -1254,6 +1300,9 @@ function App() {
         // Join the game locally
         setGameId(newGameId);
         setPlayerId(iAmHost ? ROLES.HOST : ROLES.GUEST);
+        setLocalTime(INITIAL_TIME);
+        setOppLocalTime(INITIAL_TIME);
+        setGameData(null);
         setIsSearching(false);
         setIsMatching(false); // Reset matching state
         setSearchStartTime(null);
