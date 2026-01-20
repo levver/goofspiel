@@ -44,6 +44,14 @@ import SoundManager from './utils/SoundManager';
 
 
 function App() {
+    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+    useEffect(() => {
+        const handleResize = () => setWindowWidth(window.innerWidth);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     // --- Firebase State ---
     const [gameId, setGameId] = useState(null);
     const [playerId, setPlayerId] = useState(null); // ROLES.HOST or ROLES.GUEST
@@ -403,7 +411,7 @@ function App() {
         const amHost = playerId === ROLES.HOST; // Calculate locally to avoid initialization order issues
         const myRatingUpdate = amHost ? gameData.ratingUpdates.host : gameData.ratingUpdates.guest;
 
-        if (myRatingUpdate && myUserId) {
+        if (myRatingUpdate && myUserId && !auth.currentUser?.isAnonymous) {
             // Each player updates their own profile
             updateUserProfile(myUserId, myRatingUpdate).then(() => {
                 console.log('[RATING] Updated my profile with new rating');
@@ -1582,9 +1590,29 @@ function App() {
     const currentLog = gameData.log || { msg: `${MESSAGES.ROUND_PREFIX}${gameData.round}`, type: LOG_TYPES.NEUTRAL };
 
     const getCardStyle = (index, total) => {
-        const isMobile = window.innerWidth < 640;
+        const isMobile = windowWidth < 640;
+        const CARD_WIDTH = 80; // Approximate effective width of a card in the fan
+
+        // Calculate available width for the hand (screen width - padding)
+        // Mobile: 100vw - 32px (px-4 * 2)
+        // Desktop: max-w-450px usually
+        const containerWidth = Math.min(windowWidth - 32, 450);
+
+        const idealSpread = isMobile ? 30 : 45;
+
+        // Dynamic calc:
+        // Total width needed = (total - 1) * spread + CARD_WIDTH
+        // If needed > container, reduce spread
+        // (total - 1) * spread = container - CARD_WIDTH
+        // spread = (container - CARD_WIDTH) / (total - 1)
+
+        let spread = idealSpread;
+        if (total > 1) {
+            const maxSpread = (containerWidth - CARD_WIDTH) / (total - 1);
+            spread = Math.min(idealSpread, maxSpread);
+        }
+
         const arcStrength = isMobile ? 6 : 8;
-        const spread = isMobile ? 30 : 45;
         const middle = (total - 1) / 2;
         const diff = index - middle;
         const rotation = diff * (isMobile ? 5 : 6);

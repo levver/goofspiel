@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { RATING_ANIMATION_DURATION, RATING_ANIMATION_DELAY } from '../utils/constants';
+import { auth } from '../utils/firebaseConfig';
 
 const EndScreen = ({
     myData,
@@ -73,7 +74,14 @@ const EndScreen = ({
                 </h1>
 
                 {/* Rating Display */}
-                {ratingUpdate && (
+                {auth.currentUser?.isAnonymous ? (
+                    <div className="flex flex-col items-center justify-center my-4 h-24">
+                        <div className="text-slate-400 text-xs uppercase tracking-widest mb-1">RATING UNTRACKED</div>
+                        <div className="text-xl font-bold text-slate-300">
+                            REGISTER TO TRACK RATING
+                        </div>
+                    </div>
+                ) : ratingUpdate && (
                     <div className="flex flex-col items-center justify-center my-4 h-24">
                         <div className="text-slate-400 text-xs uppercase tracking-widest mb-1">RATING UPDATE</div>
                         <div className={`text-6xl font-black font-mono relative transition-colors duration-300 ${ratingChange > 0 ? 'text-green-400' : ratingChange < 0 ? 'text-red-400' : 'text-slate-200'}`}>

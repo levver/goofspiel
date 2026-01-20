@@ -75,11 +75,11 @@ export const processGameEndRatings = async (gameId, gameData, hostScore, guestSc
     const currentUserId = auth.currentUser?.uid;
     const promises = [];
 
-    if (currentUserId === hostId) {
+    if (currentUserId === hostId && !auth.currentUser?.isAnonymous) {
         promises.push(updateUserProfile(hostId, ratingUpdates.host));
     }
 
-    if (currentUserId === guestId) {
+    if (currentUserId === guestId && !auth.currentUser?.isAnonymous) {
         promises.push(updateUserProfile(guestId, ratingUpdates.guest));
     }
 

@@ -65,8 +65,10 @@ export const updateUserProfile = async (userId, data) => {
         const updates = {};
         updates[`users/${userId}`] = merged;
 
-        // Mirror to public_profiles for leaderboard
-        updates[`public_profiles/${userId}`] = merged;
+        // Mirror to public_profiles for leaderboard ONLY if not anonymous
+        if (auth.currentUser && !auth.currentUser.isAnonymous) {
+            updates[`public_profiles/${userId}`] = merged;
+        }
 
         await update(ref(db), updates);
     } catch (error) {
