@@ -1,6 +1,5 @@
-import React from 'react';
 import { Pyramid } from './Icons';
-import { THEME, RANK_LABELS } from '../utils/constants';
+import { THEME } from '../utils/constants';
 
 const DataChip = ({
     rank,
@@ -15,7 +14,6 @@ const DataChip = ({
 }) => {
     const theme = THEME[type];
     const Icon = theme.icon;
-    const label = RANK_LABELS[rank] || (rank < 10 ? `0${rank}` : rank);
 
     const widthClass = compact ? 'w-20' : 'w-24 sm:w-28';
     const heightClass = compact ? 'h-28' : 'h-32 sm:h-40';
@@ -59,7 +57,7 @@ const DataChip = ({
             </div>
 
             <div className="flex flex-col items-end">
-                <span className={`text-[8px] font-mono opacity-70 ${theme.color}`}>{label}</span>
+
                 <div className={`h-0.5 w-full bg-slate-800 mt-0.5 overflow-hidden rounded-full`}>
                     <div className={`h-full ${theme.bg.replace('/10', '')}`} style={{ width: `${(rank / 13) * 100}%` }}></div>
                 </div>

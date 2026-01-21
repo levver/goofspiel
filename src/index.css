@@ -14,11 +14,11 @@ body {
     .animate-pop-in {
         animation: pop-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
     }
-    
+
     .animate-thump {
         animation: thump 0.4s ease-out forwards;
     }
-    
+
     .animate-fade-in-up {
         animation: fade-in-up 0.5s ease-out forwards;
     }
@@ -26,15 +26,15 @@ body {
     .animate-shatter {
         animation: shatter 0.5s ease-in-out;
     }
-    
+
     .animate-shake {
-        animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        animation: shake 0.5s cubic-bezier(.36, .07, .19, .97) both;
     }
-    
+
     .drop-shadow-glow-cyan {
         filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.4));
     }
-    
+
     .drop-shadow-glow-purple {
         filter: drop-shadow(0 0 8px rgba(217, 70, 239, 0.4));
     }
@@ -50,22 +50,53 @@ body {
     .shadow-glow-purple {
         box-shadow: 0 0 15px rgba(217, 70, 239, 0.2);
     }
+
+    .shadow-glow-cyan-soft {
+        box-shadow: 0 0 15px rgba(34, 211, 238, 0.1);
+    }
+
+    .shadow-glow-fuchsia {
+        box-shadow: 0 0 15px rgba(217, 70, 239, 0.3);
+    }
 }
 
 @keyframes pop-in {
-    0% { opacity: 0; transform: scale(0.9); }
-    100% { opacity: 1; transform: scale(1); }
+    0% {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 @keyframes thump {
-    0% { opacity: 0; transform: scale(1.5); }
-    50% { opacity: 1; transform: scale(1.1); }
-    100% { opacity: 0; transform: scale(1); }
+    0% {
+        opacity: 0;
+        transform: scale(1.5);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(1);
+    }
 }
 
 @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 .animate-fade-in {
@@ -73,26 +104,66 @@ body {
 }
 
 @keyframes fade-in-up {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @keyframes shatter {
-    0% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.2); opacity: 0.8; }
-    100% { transform: scale(0); opacity: 0; }
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.2);
+        opacity: 0.8;
+    }
+
+    100% {
+        transform: scale(0);
+        opacity: 0;
+    }
 }
 
 @keyframes shake {
-  10%, 90% { transform: translate3d(-1px, 0, 0); }
-  20%, 80% { transform: translate3d(2px, 0, 0); }
-  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-  40%, 60% { transform: translate3d(4px, 0, 0); }
+
+    10%,
+    90% {
+        transform: translate3d(-1px, 0, 0);
+    }
+
+    20%,
+    80% {
+        transform: translate3d(2px, 0, 0);
+    }
+
+    30%,
+    50%,
+    70% {
+        transform: translate3d(-4px, 0, 0);
+    }
+
+    40%,
+    60% {
+        transform: translate3d(4px, 0, 0);
+    }
 }
 
 @keyframes flash {
-    0% { background-color: rgba(255, 255, 255, 0.1); }
-    100% { background-color: transparent; }
+    0% {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    100% {
+        background-color: transparent;
+    }
 }
 
 .animate-flash {

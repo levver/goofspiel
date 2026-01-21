@@ -4,6 +4,24 @@ export default {
         "./index.html",
         "./src/**/*.{js,ts,jsx,tsx}",
     ],
+    safelist: [
+        // Theme colors used dynamically from constants.js THEME object
+        'bg-yellow-400/10',
+        'bg-cyan-400/10',
+        'bg-fuchsia-500/10',
+        'bg-yellow-400',
+        'bg-cyan-400',
+        'bg-fuchsia-500',
+        'border-yellow-400',
+        'border-cyan-400',
+        'border-fuchsia-500',
+        'text-yellow-400',
+        'text-cyan-400',
+        'text-fuchsia-500',
+        'shadow-yellow-400/50',
+        'shadow-cyan-400/50',
+        'shadow-fuchsia-500/50',
+    ],
     theme: {
         extend: {
             fontFamily: {

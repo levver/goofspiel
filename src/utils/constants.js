@@ -155,3 +155,5 @@ export const TIMINGS = {
     DECLINE_RELOAD_DELAY: 2000, // 2s
     TIMER_TICK_INTERVAL: 1000 // 1s
 };
+
+export const AI_ID = 'AI_OPPONENT';

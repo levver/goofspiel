@@ -12,7 +12,7 @@ const WaitingScreen = ({ gameId, onCancel }) => {
             {onCancel && (
                 <button
                     onClick={onCancel}
-                    className="mt-4 px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 rounded-lg transition-all duration-200 font-mono text-sm"
+                    className="mt-4 px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 rounded-xl transition-all duration-200 font-mono text-sm"
                 >
                     {WAITING_TEXT.CANCEL}
                 </button>

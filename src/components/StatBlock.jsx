@@ -2,7 +2,7 @@ import React from 'react';
 import { Clock } from './Icons';
 import { formatTime } from '../utils/helpers';
 
-const StatBlock = ({ label, value, time, color, icon: Icon, align, profile, playerName }) => {
+const StatBlock = ({ label, value, time, color, icon: Icon, align, profile, playerName, matchScore }) => {
     const isLeft = align === 'left';
 
     const getWinRate = () => {
@@ -13,9 +13,37 @@ const StatBlock = ({ label, value, time, color, icon: Icon, align, profile, play
     return (
         <div className={`flex flex-col ${isLeft ? 'items-start' : 'items-end'} group relative`}>
             <div className="flex items-center gap-2 mb-1">
-                {!isLeft && <span className={`text-xs font-bold tracking-widest ${color} drop-shadow-[0_0_6px_currentColor]`}>{label}</span>}
+                {!isLeft && (
+                    <>
+                        {matchScore !== undefined && (
+                            <div className="flex gap-1 mr-1">
+                                {[...Array(2)].map((_, i) => (
+                                    <div
+                                        key={`match-pip-${i}`}
+                                        className={`w-1.5 h-1.5 rounded-full border ${color === 'text-fuchsia-500' ? 'border-fuchsia-400/50' : 'border-cyan-400/50'} ${i < matchScore ? (color === 'text-fuchsia-500' ? 'bg-fuchsia-400 shadow-[0_0_4px_rgba(232,121,249,0.6)]' : 'bg-cyan-400 shadow-[0_0_4px_rgba(34,211,238,0.6)]') : 'bg-transparent'}`}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                        <span className={`text-xs font-bold tracking-widest ${color} drop-shadow-[0_0_6px_currentColor]`}>{label}</span>
+                    </>
+                )}
                 <Icon className={`w-4 h-4 ${color} drop-shadow-[0_0_8px_currentColor]`} />
-                {isLeft && <span className={`text-xs font-bold tracking-widest ${color} drop-shadow-[0_0_6px_currentColor]`}>{label}</span>}
+                {isLeft && (
+                    <>
+                        <span className={`text-xs font-bold tracking-widest ${color} drop-shadow-[0_0_6px_currentColor]`}>{label}</span>
+                        {matchScore !== undefined && (
+                            <div className="flex gap-1 ml-1">
+                                {[...Array(2)].map((_, i) => (
+                                    <div
+                                        key={`match-pip-${i}`}
+                                        className={`w-1.5 h-1.5 rounded-full border ${color === 'text-cyan-400' ? 'border-cyan-400/50' : 'border-fuchsia-400/50'} ${i < matchScore ? (color === 'text-cyan-400' ? 'bg-cyan-400 shadow-[0_0_4px_rgba(34,211,238,0.6)]' : 'bg-fuchsia-400 shadow-[0_0_4px_rgba(232,121,249,0.6)]') : 'bg-transparent'}`}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </>
+                )}
             </div>
 
             {/* Profile Tooltip */}

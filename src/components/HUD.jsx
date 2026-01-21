@@ -1,6 +1,7 @@
 import React from 'react';
+import { Settings } from './Icons';
 
-const HUD = ({ gameData, currentLog, onForfeit, playerId }) => {
+const HUD = ({ gameData, currentLog, onForfeit, playerId, onToggleSettings }) => {
     // Determine log style based on who won relative to current player
     let logStyle = 'bg-slate-800 text-slate-300 border border-slate-700';
 
@@ -25,11 +26,6 @@ const HUD = ({ gameData, currentLog, onForfeit, playerId }) => {
                 <span className="text-xl font-bold text-white font-mono leading-none drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]">
                     {gameData.round}<span className="text-slate-600 text-sm">/13</span>
                 </span>
-                <div className="flex items-center gap-1 mt-1 text-[10px] font-mono font-bold">
-                    <span className="text-cyan-400">YOU {gameData.host.id === (playerId === 'host' ? gameData.host.id : gameData.guest.id) ? gameData.host.matchScore || 0 : gameData.guest.matchScore || 0}</span>
-                    <span className="text-slate-600">-</span>
-                    <span className="text-fuchsia-400">OPP {gameData.host.id === (playerId === 'host' ? gameData.guest.id : gameData.host.id) ? gameData.host.matchScore || 0 : gameData.guest.matchScore || 0}</span>
-                </div>
             </div>
 
             <div className={`px-3 py-1 rounded text-xs font-mono font-bold tracking-wider transition-colors duration-300 ${logStyle}`}>
@@ -43,15 +39,27 @@ const HUD = ({ gameData, currentLog, onForfeit, playerId }) => {
                 </span>
             </div>
 
-            {/* Forfeit Button */}
-            {(gameData.status === 'PLAYING' || gameData.status === 'RESOLVING') && (
+            {/* Right Side Actions Group */}
+            <div className="flex items-center gap-2">
+                {/* Forfeit Button */}
+                {(gameData.status === 'PLAYING' || gameData.status === 'RESOLVING') && (
+                    <button
+                        onClick={onForfeit}
+                        className="px-3 py-1 bg-red-900/50 hover:bg-red-800/70 border border-red-700 rounded text-red-200 text-xs font-mono uppercase tracking-wider transition-all shadow-[0_0_10px_rgba(185,28,28,0.3)] hover:shadow-[0_0_15px_rgba(185,28,28,0.5)]"
+                    >
+                        Forfeit
+                    </button>
+                )}
+
+                {/* Settings Button */}
                 <button
-                    onClick={onForfeit}
-                    className="px-3 py-1 bg-red-900/50 hover:bg-red-800/70 border border-red-700 rounded text-red-200 text-xs font-mono uppercase tracking-wider transition-all shadow-[0_0_10px_rgba(185,28,28,0.3)] hover:shadow-[0_0_15px_rgba(185,28,28,0.5)]"
+                    onClick={onToggleSettings}
+                    className="p-1.5 text-slate-400 hover:text-cyan-400 bg-slate-800/50 hover:bg-slate-700 border border-slate-700 rounded-full transition-all"
+                    title="Settings"
                 >
-                    Forfeit
+                    <Settings size={16} />
                 </button>
-            )}
+            </div>
         </div>
     );
 };

@@ -4,7 +4,7 @@ import { auth } from '../utils/firebaseConfig';
 import { Pyramid, Mail, Lock } from './Icons';
 import { AUTH_TEXT } from '../utils/constants';
 
-const LoginScreen = () => {
+const LoginScreen = ({ onPlayAi }) => {
     const [isSignUp, setIsSignUp] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -23,7 +23,12 @@ const LoginScreen = () => {
                 await signInWithEmailAndPassword(auth, email, password);
             }
         } catch (err) {
-            setError(err.message);
+            console.error("Auth error:", err);
+            if (err.code === 'auth/email-already-in-use') {
+                setError('Account already exists. Please sign in instead.');
+            } else {
+                setError(err.message);
+            }
         } finally {
             setLoading(false);
         }
@@ -60,7 +65,7 @@ const LoginScreen = () => {
                 </div>
 
                 {/* Auth Form */}
-                <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 shadow-2xl">
+                <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700 rounded-2xl p-6 shadow-2xl">
                     <form onSubmit={handleEmailAuth} className="space-y-4">
                         <div>
                             <label className="block text-xs font-mono text-slate-400 mb-2 tracking-widest">{AUTH_TEXT.EMAIL_LABEL}</label>
@@ -70,7 +75,7 @@ const LoginScreen = () => {
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full bg-slate-800/50 border border-slate-700 rounded px-10 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:shadow-glow-cyan transition-colors"
+                                    className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-10 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:shadow-glow-cyan transition-colors"
                                     placeholder={AUTH_TEXT.EMAIL_PLACEHOLDER}
                                     required
                                 />
@@ -85,7 +90,7 @@ const LoginScreen = () => {
                                     type="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full bg-slate-800/50 border border-slate-700 rounded px-10 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:shadow-glow-cyan transition-colors"
+                                    className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-10 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:shadow-glow-cyan transition-colors"
                                     placeholder={AUTH_TEXT.PASSWORD_PLACEHOLDER}
                                     required
                                     minLength={6}
@@ -102,7 +107,7 @@ const LoginScreen = () => {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 rounded transition-all transform hover:scale-105 shadow-glow-cyan uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 rounded-xl transition-all transform hover:scale-105 shadow-glow-cyan uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loading ? AUTH_TEXT.LOADING : (isSignUp ? AUTH_TEXT.SIGN_UP : AUTH_TEXT.SIGN_IN)}
                         </button>
@@ -131,10 +136,28 @@ const LoginScreen = () => {
                     <button
                         onClick={handleAnonymousSignIn}
                         disabled={loading}
-                        className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded transition-all border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl transition-all border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {AUTH_TEXT.GUEST_LOGIN}
                     </button>
+
+                    <div className="relative my-4">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-slate-700 opacity-50"></div>
+                        </div>
+                        <div className="relative flex justify-center text-xs">
+                            <span className="px-2 bg-slate-900 text-slate-500 font-mono">PRACTICE</span>
+                        </div>
+                    </div>
+
+                    {/* AI Practice Button */}
+                    <button
+                        onClick={onPlayAi}
+                        className="w-full bg-cyan-900/40 hover:bg-cyan-800/60 text-cyan-200 border border-cyan-500/30 hover:border-cyan-500/60 font-bold py-3 rounded-xl transition-all shadow-[0_0_15px_-5px_rgba(34,211,238,0.3)] hover:shadow-[0_0_20px_-5px_rgba(34,211,238,0.5)]"
+                    >
+                        PRACTICE VS BOT
+                    </button>
+
                 </div>
 
                 <p className="text-center text-xs text-slate-500 mt-6 font-mono">

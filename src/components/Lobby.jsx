@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from '../utils/firebaseConfig';
 import { signOut } from 'firebase/auth';
-import { Pyramid, Trophy, LogOut } from './Icons';
+import { Pyramid, Trophy, LogOut, Cpu } from './Icons';
 import { LOBBY_TEXT } from '../utils/constants';
 import Leaderboard from './Leaderboard';
 import SoundManager from '../utils/SoundManager';
 
-const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStartTime, onFindMatch, onCancelSearch }) => {
+const Lobby = ({ onCreateGame, onJoinGame, onPlayAi, currentUser, isSearching, searchStartTime, onFindMatch, onCancelSearch }) => {
     const [joinCode, setJoinCode] = useState('');
     const [isJoining, setIsJoining] = useState(false);
     const [profile, setProfile] = useState(null);
@@ -93,7 +93,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                         )}
                         <button
                             onClick={handleSignOut}
-                            className="w-full flex items-center justify-center gap-2 text-xs text-slate-400 hover:text-red-400 transition-colors font-mono py-2 border border-slate-700 rounded hover:border-red-500/50"
+                            className="w-full flex items-center justify-center gap-2 text-xs text-slate-400 hover:text-red-400 transition-colors font-mono py-2 border border-slate-700 rounded-lg hover:border-red-500/50"
                         >
                             <LogOut className="w-3 h-3" />
                             {LOBBY_TEXT.SIGN_OUT}
@@ -112,7 +112,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                             </div>
                             <button
                                 onClick={onCancelSearch}
-                                className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold py-3 rounded transition-all border border-red-500/50 uppercase tracking-widest"
+                                className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold py-3 rounded-xl transition-all border border-red-500/50 uppercase tracking-widest"
                             >
                                 {LOBBY_TEXT.CANCEL_SEARCH}
                             </button>
@@ -121,7 +121,7 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                         <>
                             <button
                                 onClick={onFindMatch}
-                                className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-bold py-4 px-6 rounded-lg transition-all transform hover:scale-105 shadow-glow-cyan-soft uppercase tracking-widest"
+                                className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-105 shadow-glow-cyan uppercase tracking-widest"
                             >
                                 {LOBBY_TEXT.FIND_MATCH}
                             </button>
@@ -135,9 +135,17 @@ const Lobby = ({ onCreateGame, onJoinGame, currentUser, isSearching, searchStart
                     )}
                     <button
                         onClick={onCreateGame}
-                        className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 px-6 rounded transition-all transform hover:scale-105 shadow-glow-cyan-soft uppercase tracking-widest"
+                        className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 px-6 rounded-xl transition-all transform hover:scale-105 shadow-glow-cyan uppercase tracking-widest"
                     >
                         {LOBBY_TEXT.CREATE_GAME}
+                    </button>
+
+                    <button
+                        onClick={onPlayAi}
+                        className="bg-cyan-900/40 hover:bg-cyan-800/60 text-cyan-200 border border-cyan-500/30 hover:border-cyan-500/60 font-bold py-3 px-6 rounded-xl transition-all transform hover:scale-105 shadow-glow-cyan-soft uppercase tracking-widest flex items-center justify-center gap-2"
+                    >
+                        <Cpu className="w-5 h-5 shadow-sm" />
+                        PRACTICE VS BOT
                     </button>
 
                     <div className="relative flex items-center py-2">

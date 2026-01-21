@@ -1,6 +1,6 @@
 import { ref, update, get, serverTimestamp } from "firebase/database";
 import { db, auth } from "./firebaseConfig";
-import { GAME_STATUS, FIREBASE_PATHS, TIMINGS, ROLES, MESSAGES, LOG_TYPES } from "./constants";
+import { GAME_STATUS, FIREBASE_PATHS, TIMINGS, ROLES, MESSAGES, LOG_TYPES, AI_ID } from "./constants";
 import { calculateNewRating } from "./glicko";
 import { getUserProfile, updateUserProfile } from "./userManager";
 
@@ -29,6 +29,11 @@ export const processGameEndRatings = async (gameId, gameData, hostScore, guestSc
     const guestId = gameData.guest.id;
 
     if (!hostId || !guestId) return;
+
+    if (hostId === AI_ID || guestId === AI_ID) {
+        console.log('[RATING] Game vs AI, skipping rating updates');
+        return;
+    }
 
     const p1 = await getUserProfile(hostId);
     const p2 = await getUserProfile(guestId);

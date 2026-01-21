@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Cpu, Hexagon, Activity } from './components/Icons';
+import { Cpu, Hexagon, Activity, Settings } from './components/Icons';
 import DataChip from './components/DataChip';
+import SettingsMenu from './components/SettingsMenu';
 import { VerticalGraveyard, HorizontalGraveyard } from './components/Graveyard';
 import ProgressBar from './components/ProgressBar';
 import StatBlock from './components/StatBlock';
@@ -28,7 +29,8 @@ import {
     LOCAL_STORAGE_KEYS,
     REMATCH_STATUS,
     LOG_TYPES,
-    TIMINGS
+    TIMINGS,
+    AI_ID
 } from './utils/constants';
 import { shuffle } from './utils/helpers';
 import { db } from './utils/firebaseConfig';
@@ -41,6 +43,7 @@ import { findBestMatch, isHigherRated } from './utils/matchmaking';
 import { setupPresence, sendHeartbeat, cleanupPresence } from './utils/presence';
 import { generateShortGameId, checkAndCleanupGame, checkUnresolvedGames, processGameEndRatings } from './utils/gameLogic';
 import SoundManager from './utils/SoundManager';
+import { calculateAiMove } from './utils/aiLogic';
 
 
 function App() {
@@ -215,6 +218,59 @@ function App() {
         console.log('[RECONNECT] Saved game to localStorage');
     };
 
+    const createAiGame = () => {
+        SoundManager.playClick();
+        const newGameId = generateShortGameId();
+
+        const initialGameData = {
+            status: GAME_STATUS.PLAYING,
+            round: 1,
+            prizeDeck: shuffle([...RANKS]),
+            currentPrize: null,
+            host: { score: 0, matchScore: 0, hand: [...RANKS], bid: null, graveyard: [], time: INITIAL_TIME, id: getUserId(), name: getUserName() },
+            guest: {
+                score: 0,
+                matchScore: 0,
+                hand: [...RANKS],
+                bid: null,
+                graveyard: [],
+                time: INITIAL_TIME,
+                id: AI_ID,
+                name: 'Bot'
+            },
+            prizeGraveyard: [],
+            lastAction: Date.now(),
+            roundStart: serverTimestamp(),
+            rematch: {
+                hostRequest: false,
+                guestRequest: false,
+                accepted: false
+            },
+            presence: {
+                host: { online: true, lastSeen: serverTimestamp(), disconnectedAt: null },
+                guest: { online: true, lastSeen: serverTimestamp(), disconnectedAt: null }
+            }
+        };
+
+        // Set initial prize
+        initialGameData.currentPrize = initialGameData.prizeDeck[0];
+        initialGameData.prizeDeck = initialGameData.prizeDeck.slice(1);
+
+        set(ref(db, `${FIREBASE_PATHS.GAMES}/${newGameId}`), initialGameData);
+        setGameId(newGameId);
+        setPlayerId(ROLES.HOST);
+        setLocalTime(INITIAL_TIME);
+        setOppLocalTime(INITIAL_TIME);
+        setGameData(null);
+
+        // Save to localStorage
+        localStorage.setItem(LOCAL_STORAGE_KEYS.ACTIVE_GAME, JSON.stringify({
+            gameId: newGameId,
+            playerId: ROLES.HOST,
+            timestamp: Date.now()
+        }));
+    };
+
     const joinGame = (code) => {
         SoundManager.playClick();
         const gameRef = ref(db, `${FIREBASE_PATHS.GAMES}/${code}`);
@@ -289,11 +345,13 @@ function App() {
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/hand`] = [...RANKS];
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/bid`] = null;
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/graveyard`] = [];
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/host/time`] = INITIAL_TIME;
 
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/score`] = 0;
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/hand`] = [...RANKS];
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/bid`] = null;
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/graveyard`] = [];
+        updates[`${FIREBASE_PATHS.GAMES}/${gameId}/guest/time`] = INITIAL_TIME;
 
         updates[`${FIREBASE_PATHS.GAMES}/${gameId}/log`] = {
             msg: `GAME ${gameData.host.matchScore + gameData.guest.matchScore + 1} STARTED`,
@@ -552,8 +610,9 @@ function App() {
         // AND newGameId doesn't exist yet (prevent duplicate creation)
         if ((rematch.accepted || (rematch.hostRequest && rematch.guestRequest)) && rematchStatus !== REMATCH_STATUS.ACCEPTED && !rematch.newGameId) {
             setRematchStatus(REMATCH_STATUS.ACCEPTED);
-            // Only host creates the game
-            if (playerId === ROLES.HOST) {
+            // Only host creates the game (or Guest if Host is AI)
+            const hostIsAi = gameData.host?.id === AI_ID;
+            if (playerId === ROLES.HOST || hostIsAi) {
                 handleRematchAccepted();
             }
         }
@@ -769,6 +828,10 @@ function App() {
 
     const [isMatching, setIsMatching] = useState(false);
     const [tieAnimation, setTieAnimation] = useState(false);
+
+    // Settings State
+    const [showSettings, setShowSettings] = useState(false);
+    const [isMuted, setIsMuted] = useState(SoundManager.isMuted);
     const tieTimerRef = useRef(null);
 
     // Sync tie animation from database tie flag
@@ -798,6 +861,59 @@ function App() {
     // Prize Animation State
     const prizeSlotRef = useRef(null);
     const progressBarRef = useRef(null);
+
+    // --- AI Logic ---
+    useEffect(() => {
+        if (!gameData || !gameId) return;
+
+        const hostIsAi = gameData.host?.id === AI_ID;
+        const guestIsAi = gameData.guest?.id === AI_ID;
+
+        if (!hostIsAi && !guestIsAi) return;
+
+        // Determine which player is the AI and needs to move
+        let aiPlayer = null;
+        if (hostIsAi && !gameData.host.bid) aiPlayer = 'host';
+        else if (guestIsAi && !gameData.guest.bid) aiPlayer = 'guest';
+
+        if (gameData.status === GAME_STATUS.PLAYING && aiPlayer) {
+            // Random delay between 1.5s and 3s
+            const delay = 1500 + Math.random() * 1500;
+
+            const timer = setTimeout(() => {
+                const opponentPlayer = aiPlayer === 'host' ? 'guest' : 'host';
+                const aiMove = calculateAiMove(gameData, gameData[aiPlayer].hand, gameData[opponentPlayer].hand);
+                if (aiMove) {
+                    const updates = {};
+                    updates[`${FIREBASE_PATHS.GAMES}/${gameId}/${aiPlayer}/bid`] = aiMove;
+                    updates[`${FIREBASE_PATHS.GAMES}/${gameId}/${aiPlayer}/hand`] = gameData[aiPlayer].hand.filter(c => c !== aiMove);
+
+                    update(ref(db), updates);
+                    console.log(`[AI] (${aiPlayer}) Played:`, aiMove);
+                }
+            }, delay);
+
+            return () => clearTimeout(timer);
+        }
+
+        // Auto Rematch for AI
+        const iAmHost = playerId === ROLES.HOST;
+        const oppIsAi = iAmHost ? guestIsAi : hostIsAi;
+        const oppRole = iAmHost ? 'guest' : 'host';
+
+        if (gameData.status === GAME_STATUS.END && oppIsAi) {
+            const myRematchRequest = iAmHost ? gameData.rematch?.hostRequest : gameData.rematch?.guestRequest;
+            const oppRematchRequest = iAmHost ? gameData.rematch?.guestRequest : gameData.rematch?.hostRequest;
+
+            if (myRematchRequest && !oppRematchRequest) {
+                const timer = setTimeout(() => {
+                    set(ref(db, `${FIREBASE_PATHS.GAMES}/${gameId}/rematch/${oppRole}Request`), true);
+                }, 1000);
+                return () => clearTimeout(timer);
+            }
+        }
+
+    }, [gameData, gameId, playerId]);
     const [animatingPrize, setAnimatingPrize] = useState(null);
     const [animatingPrizeWinner, setAnimatingPrizeWinner] = useState(null);
     const [prizeAnimationProps, setPrizeAnimationProps] = useState(null);
@@ -911,17 +1027,20 @@ function App() {
 
     // Host Logic for Resolution
     useEffect(() => {
-        if (playerId !== ROLES.HOST || !gameData) return;
+        if (!gameData) return;
 
-        if (gameData.status === GAME_STATUS.PLAYING && gameData.host.bid && gameData.guest.bid) {
+        const hostIsAi = gameData.host?.id === AI_ID;
+        const isResolutionAuthority = playerId === ROLES.HOST || hostIsAi;
+
+        if (isResolutionAuthority && gameData.status === GAME_STATUS.PLAYING && gameData.host.bid && gameData.guest.bid) {
             // Both players have bid, trigger resolution
-            resolveRound(gameData.host.bid, gameData.guest.bid);
+            resolveRound();
         }
 
         // Check for game end (e.g. forfeit) to trigger rating updates
         // If status is END but no ratingUpdates exist yet, calculate them
-        if (gameData.status === GAME_STATUS.END && !gameData.ratingUpdates) {
-            console.log('[HOST] Game ended, calculating ratings...');
+        if (isResolutionAuthority && gameData.status === GAME_STATUS.END && !gameData.ratingUpdates) {
+            console.log('[AUTONOMOUS] Game ended, calculating ratings...');
             handleGameEnd(gameData.host.score, gameData.guest.score);
         }
     }, [gameData, playerId]);
@@ -1217,7 +1336,8 @@ function App() {
     // When both players accept, the Host creates a new game and links it to the old one.
     // Both players then detect the link and transition.
     const handleRematchAccepted = async () => {
-        if (playerId !== ROLES.HOST || !gameData) return; // Only host creates the new game
+        const hostIsAi = gameData.host?.id === AI_ID;
+        if ((playerId !== ROLES.HOST && !hostIsAi) || !gameData) return; // Only host (or guest if host is AI) creates the new game
 
         console.log('[REMATCH] Creating new game for rematch...');
 
@@ -1546,6 +1666,16 @@ function App() {
         }, CARD_FLIGHT_DURATION);
     };
 
+    const toggleSettings = () => {
+        setShowSettings(!showSettings);
+    };
+
+    const toggleMute = () => {
+        const newState = !isMuted;
+        setIsMuted(newState);
+        SoundManager.mute(newState);
+    };
+
 
     // --- Render Helpers ---
 
@@ -1554,13 +1684,14 @@ function App() {
     }
 
     if (!currentUser) {
-        return <LoginScreen />;
+        return <LoginScreen onPlayAi={createAiGame} />;
     }
 
     if (!gameId) {
         return <Lobby
             onCreateGame={createGame}
             onJoinGame={joinGame}
+            onPlayAi={createAiGame}
             currentUser={currentUser}
             isSearching={isSearching}
             searchStartTime={searchStartTime}
@@ -1612,7 +1743,7 @@ function App() {
             spread = Math.min(idealSpread, maxSpread);
         }
 
-        const arcStrength = isMobile ? 6 : 8;
+        const arcStrength = isMobile ? 3 : 5; // Shallower arc for better visibility
         const middle = (total - 1) / 2;
         const diff = index - middle;
         const rotation = diff * (isMobile ? 5 : 6);
@@ -1620,8 +1751,8 @@ function App() {
 
         return {
             transform: `rotate(${rotation}deg) translateY(${yOffset}px)`,
-            left: `calc(50% + ${(index - middle) * spread}px)`,
-            bottom: '10px',
+            left: `calc(50% + ${(index - middle) * spread}px - ${CARD_WIDTH / 2}px)`,
+            bottom: '25px', // Lifted significantly to ensure 50% visibility
             zIndex: index + 10,
         };
     };
@@ -1641,6 +1772,7 @@ function App() {
                 currentLog={currentLog}
                 onForfeit={handleForfeit}
                 playerId={playerId}
+                onToggleSettings={toggleSettings}
             />
 
             {/* Main Arena */}
@@ -1657,6 +1789,7 @@ function App() {
                         align="right"
                         profile={isHost ? guestProfile : hostProfile}
                         playerName={oppData.name}
+                        matchScore={oppData.matchScore || 0}
                     />
                 </div>
 
@@ -1768,6 +1901,7 @@ function App() {
                         align="left"
                         profile={isHost ? hostProfile : guestProfile}
                         playerName={myData.name}
+                        matchScore={myData.matchScore || 0}
                     />
                 </div>
 
@@ -1836,7 +1970,7 @@ function App() {
                             </div>
                         </div>
 
-                        {isHost ? (
+                        {isHost || gameData.host?.id === AI_ID ? (
                             <button
                                 onClick={startNextGame}
                                 className="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-4 rounded-lg transition-all uppercase tracking-widest shadow-glow-cyan hover:scale-105"
@@ -1888,6 +2022,19 @@ function App() {
                     />
                 </div>
             )}
+
+
+
+            {/* Settings Menu */}
+            {
+                showSettings && (
+                    <SettingsMenu
+                        onClose={() => setShowSettings(false)}
+                        isMuted={isMuted}
+                        onToggleMute={toggleMute}
+                    />
+                )
+            }
         </div>
     );
 }
